@@ -1,0 +1,8 @@
+node_modules
+backend/data
+backend/backups
+dist
+__pycache__/
+*.pyc
+.DS_Store
+eng.traineddata

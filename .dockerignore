@@ -1,0 +1,8 @@
+.git
+node_modules
+dist
+docs
+eng.traineddata
+backend/data
+backend/backups
+**/__pycache__
