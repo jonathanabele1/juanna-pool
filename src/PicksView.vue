@@ -403,6 +403,12 @@ const weekState = computed(() =>
   !hasSaved.value ? { cls: 'new', text: 'Not saved' }
     : editMode.value ? { cls: 'editing', text: 'Editing' }
       : savedLocked.value ? { cls: 'sent', text: '✓ Sent' } : { cls: 'draft', text: 'Draft' })
+const OUTCOME_TEXT = { win: 'covered', loss: 'missed', push: 'push', pending: 'not played yet', skipped: 'skipped' }
+const tally = computed(() => {
+  const t = { win: 0, loss: 0, push: 0, pending: 0 }
+  for (const x of rowInfo.value) if (!x.skip && x.outcome in t) t[x.outcome]++
+  return t
+})
 const savedLabel = computed(() => (savedAt.value ? new Date(savedAt.value.replace(' ', 'T') + 'Z').toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''))
 
 function startEdit() { editMode.value = true; tab.value = 'games' }
@@ -446,49 +452,69 @@ const signed = n => (n > 0 ? `+${n}` : `${n}`)
   <p v-if="loading" class="loading">Loading week {{ week }}…</p>
   <template v-else>
     <!-- no schedule or sheet for this week yet -->
-    <!-- one card: week title, status, the week's score, and the main action -->
+    <!-- one card: who/what/when on top, the week's results underneath -->
     <section class="weekhead">
-      <div class="wh-main">
-        <div class="wh-title">
-          <h2>Week {{ week }}</h2>
-          <span v-if="!games.length" class="badge new">Lines not posted yet</span>
-          <span v-else :class="['badge', weekState.cls]">{{ weekState.text }}</span>
+      <div class="wh-top">
+        <div class="wh-id">
+          <div class="wh-title">
+            <h2>Week {{ week }}</h2>
+            <span v-if="!games.length" class="badge new">Lines not posted yet</span>
+            <span v-else :class="['badge', weekState.cls]">{{ weekState.text }}</span>
+          </div>
+          <p class="wh-sub">
+            <template v-if="status">{{ status }}</template>
+            <template v-else-if="!games.length && isAdmin">Upload the spreads sheet. Saving posts the lines for everyone.</template>
+            <template v-else-if="!games.length">Here’s the schedule. You can pick once the lines are posted.</template>
+            <template v-else-if="scheduled && isAdmin">NFL schedule with DraftKings lines. Upload the sheet when it’s posted.</template>
+            <template v-else-if="scheduled">DraftKings lines for now. The official sheet isn’t posted yet.</template>
+            <template v-else-if="savedLabel">Saved {{ savedLabel }}</template>
+            <template v-else>Make your picks, then save.</template>
+          </p>
         </div>
-        <p v-if="!hasResults || status" class="wh-sub">
-          <template v-if="status">{{ status }}</template>
-          <template v-else-if="!games.length && isAdmin">Upload the spreads sheet. Saving posts the lines for everyone.</template>
-          <template v-else-if="!games.length">Here’s the schedule. You can pick once the lines are posted.</template>
-          <template v-else-if="scheduled && isAdmin">NFL schedule with DraftKings lines. Upload the sheet when it’s posted.</template>
-          <template v-else-if="scheduled">DraftKings lines for now. The official sheet isn’t posted yet.</template>
-          <template v-else-if="savedLabel">Saved {{ savedLabel }}</template>
-          <template v-else>Make your picks, then save.</template>
+        <div class="wh-actions">
+          <template v-if="isAdmin">
+            <a v-if="imageUrl" :href="imageUrl" target="_blank" rel="noopener" class="btn ghost sm" title="Open the uploaded sheet">🖼 Sheet</a>
+            <button v-if="editMode || !games.length" :class="['btn', games.length ? 'ghost sm' : 'primary']" @click="uploadOpen = true">📷 {{ imageUrl ? 'Replace sheet' : 'Upload sheet' }}</button>
+            <button v-if="!games.length && events.length" class="btn ghost" @click="scaffold" title="Use the NFL schedule with DraftKings lines until the sheet is out">Use DraftKings lines</button>
+          </template>
+          <template v-if="games.length">
+            <button v-if="!editMode" class="btn primary" @click="startEdit">✎ Edit picks</button>
+            <button v-else-if="hasSaved" class="btn ghost" @click="cancelEdit">Cancel</button>
+          </template>
+        </div>
+      </div>
+
+      <div v-if="games.length && hasResults" class="wh-results">
+        <dl class="wh-stats">
+          <div :class="['stat', 'score', scored.score > 0 ? 'pos' : scored.score < 0 ? 'neg' : '']">
+            <dt>Score</dt><dd>{{ scored.score }}</dd>
+          </div>
+          <div class="stat">
+            <dt>Record</dt><dd>{{ scored.wins }}–{{ scored.losses }}<small v-if="scored.pushes">–{{ scored.pushes }}</small></dd>
+          </div>
+          <div class="stat">
+            <dt>Points won</dt><dd>{{ scored.earned }}<small> / {{ scored.wagered }}</small></dd>
+          </div>
+          <div v-if="scored.penaltyTotal" class="stat">
+            <dt>Penalties</dt><dd class="neg">−{{ scored.penaltyTotal }}</dd>
+          </div>
+        </dl>
+
+        <div class="wh-strip" role="img" :aria-label="`${tally.win} covered, ${tally.loss} missed, ${tally.pending} still to play`">
+          <span v-for="x in rowInfo" :key="x.i" :class="['seg', x.skip ? 'skipped' : x.outcome]"
+                :title="`${pickName(x.g)} ${x.skip ? '(no pick)' : x.pts}: ${OUTCOME_TEXT[x.skip ? 'skipped' : x.outcome]}`"></span>
+        </div>
+        <p class="wh-legend">
+          <span><i class="dot win"></i>{{ tally.win }} covered</span>
+          <span><i class="dot loss"></i>{{ tally.loss }} missed</span>
+          <span v-if="tally.push"><i class="dot push"></i>{{ tally.push }} push</span>
+          <span v-if="tally.pending"><i class="dot pending"></i>{{ tally.pending }} to play</span>
+          <span v-if="penaltyRows.length || scored.adjustment" class="wh-adj">
+            <template v-for="[n, v] in penaltyRows" :key="n">{{ n }} −{{ v }} · </template>
+            <template v-if="scored.adjustment">Adjustment {{ signed(scored.adjustment) }}<template v-if="adjNote"> ({{ adjNote }})</template></template>
+          </span>
         </p>
       </div>
-
-      <dl v-if="games.length && hasResults" class="wh-stats">
-        <div class="score"><dt>Score</dt><dd :class="{ neg: scored.score < 0 }">{{ scored.score }}</dd></div>
-        <div><dt>Record</dt><dd>{{ scored.wins }}–{{ scored.losses }}<template v-if="scored.pushes">–{{ scored.pushes }}</template></dd></div>
-        <div><dt>Points won</dt><dd>{{ scored.earned }} <small>/ {{ scored.wagered }}</small></dd></div>
-        <div v-if="scored.pending"><dt>Pending</dt><dd>{{ scored.pending }}</dd></div>
-        <div v-if="scored.penaltyTotal"><dt>Penalties</dt><dd class="neg">−{{ scored.penaltyTotal }}</dd></div>
-      </dl>
-
-      <div class="wh-actions">
-        <template v-if="isAdmin">
-          <a v-if="imageUrl" :href="imageUrl" target="_blank" rel="noopener" class="btn ghost sm" title="Open the uploaded sheet">🖼 Sheet</a>
-          <button v-if="editMode || !games.length" :class="['btn', games.length ? 'ghost sm' : 'primary']" @click="uploadOpen = true">📷 {{ imageUrl ? 'Replace sheet' : 'Upload sheet' }}</button>
-          <button v-if="!games.length && events.length" class="btn ghost" @click="scaffold" title="Use the NFL schedule with DraftKings lines until the sheet is out">Use DraftKings lines</button>
-        </template>
-        <template v-if="games.length">
-          <button v-if="!editMode" class="btn primary" @click="startEdit">✎ Edit picks</button>
-          <button v-else-if="hasSaved" class="btn ghost" @click="cancelEdit">Cancel</button>
-        </template>
-      </div>
-
-      <p v-if="games.length && hasResults && (penaltyRows.length || scored.adjustment)" class="r-pen wh-full">
-        <span v-for="[n, v] in penaltyRows" :key="n">{{ n }} −{{ v }}</span>
-        <span v-if="scored.adjustment" :class="scored.adjustment < 0 ? 'neg' : 'pos'">Adjustment {{ signed(scored.adjustment) }}<template v-if="adjNote"> · {{ adjNote }}</template></span>
-      </p>
     </section>
 
     <!-- no lines yet: still show the week's games -->
@@ -503,18 +529,18 @@ const signed = n => (n > 0 ? `+${n}` : `${n}`)
         <button class="btn primary sm" :disabled="saving" @click="save()">{{ saving ? 'Saving…' : 'Save' }}</button>
       </p>
 
-      <!-- edit tools: only while editing -->
-      <section v-if="editMode" class="edittools">
+      <!-- edit tools: admins only, while editing -->
+      <section v-if="editMode && isAdmin" class="edittools">
         <div class="et-row">
           <b>Edit tools</b>
           <div class="tools">
             <button class="btn ghost" :disabled="loadingLines" @click="refreshLines">{{ loadingLines ? 'Refreshing…' : '↻ Refresh lines' }}</button>
-            <button v-if="scheduled && isAdmin" class="btn ghost" :disabled="loadingLines" @click="refreshLines().then(syncLines)" title="Replace the spreads with DraftKings' latest, keeping your picks">↻ Use latest DK lines</button>
+            <button v-if="scheduled" class="btn ghost" :disabled="loadingLines" @click="refreshLines().then(syncLines)" title="Replace the spreads with DraftKings' latest, keeping your picks">↻ Use latest DK lines</button>
             <button class="btn ghost" @click="resetPoints">Reset to 2</button>
-            <button v-if="isAdmin" :class="['btn', 'ghost', { active: fixNames }]" @click="fixNames = !fixNames">✎ Fix names</button>
+            <button :class="['btn', 'ghost', { active: fixNames }]" @click="fixNames = !fixNames">✎ Fix names</button>
           </div>
         </div>
-        <div v-if="isAdmin" class="r-adj">
+        <div class="r-adj">
           <label>Adjustment <input type="number" v-model.number="adjustment" /></label>
           <label class="grow">Note <input v-model="adjNote" placeholder="e.g. 2nd late pick (−10)" /></label>
         </div>
