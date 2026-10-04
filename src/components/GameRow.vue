@@ -126,7 +126,7 @@ const deltaText = d => (d > 0 ? `▲ +${d}` : `▼ ${d}`)
       <span class="pill line" title="Spread from your sheet">{{ lineText }}</span>
       <span v-if="final && outcome" :class="['pill', 'res', outcome]">
         {{ outcome === 'win' ? 'Covered' : outcome === 'loss' ? 'Missed' : 'Push' }}
-        <b>{{ outcome === 'win' ? `+${result.earned}` : outcome === 'loss' ? `0 of ${g.points}` : '0' }}</b>
+        <b>{{ outcome === 'win' ? `+${result?.earned ?? g.points}` : outcome === 'loss' ? `0 of ${g.points}` : '0' }}</b>
       </span>
       <span v-else-if="live && cover" :class="['pill', 'cov', cover.status]" title="Your pick against the sheet spread, if it ended now">
         {{ coverText }}
