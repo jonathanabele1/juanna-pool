@@ -10,7 +10,7 @@ import { gamesFromEvents } from './schedule.js'
 import { SAMPLE } from './sample.js'
 
 const props = defineProps({ week: Number, currentWeek: Number, isAdmin: Boolean })
-const emit = defineEmits(['saved'])
+const emit = defineEmits(['saved', 'scored'])
 
 const TARGET = 100
 const saved = (k, d) => { try { return localStorage.getItem(k) ?? d } catch { return d } }
@@ -52,6 +52,8 @@ const linesError = ref('')
 const fetchedAt = ref(null)
 const loadingLines = ref(false)
 let timer
+const LIVE_POLL = 30 * 1000      // a game is on: matches the server's ESPN cache
+const IDLE_POLL = 5 * 60 * 1000  // nothing live: lines barely move
 
 async function refreshLines() {
   loadingLines.value = true
@@ -72,6 +74,20 @@ const changedCount = computed(() => nowLines.value.filter((n, i) => n.changed &&
 const fetchedLabel = computed(() => (fetchedAt.value ? new Date(fetchedAt.value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''))
 const resultFor = i => scored.value?.games?.[i]
 const showLinesbar = computed(() => !!linesError.value || events.value.some(e => e.state !== 'post'))
+const liveCount = computed(() => events.value.filter(e => e.state === 'in').length)
+
+// While games are on, re-check scores every 30s (and right away when you come back to the tab).
+async function poll() {
+  clearTimeout(timer)
+  const wasLive = liveCount.value > 0
+  await refreshLines()
+  if (hasSaved.value && (wasLive || liveCount.value)) {
+    const w = await getWeek(props.week).catch(() => null)
+    if (w?.score) { scored.value = w.score; emit('scored') }
+  }
+  timer = setTimeout(poll, liveCount.value ? LIVE_POLL : IDLE_POLL)
+}
+const onVisible = () => { if (document.visibilityState === 'visible' && !loading.value) poll() }
 
 watch(teamName, v => { try { localStorage.setItem('teamName', v) } catch {} })
 
@@ -120,10 +136,11 @@ onMounted(async () => {
     snapshot.value = ''
   }
   loading.value = false
-  timer = setInterval(refreshLines, 5 * 60 * 1000)
+  timer = setTimeout(poll, liveCount.value ? LIVE_POLL : IDLE_POLL)
+  document.addEventListener('visibilitychange', onVisible)
   if (props.isAdmin && location.search.includes('demo') && !games.value.length) loadText(SAMPLE)
 })
-onUnmounted(() => clearInterval(timer))
+onUnmounted(() => { clearTimeout(timer); document.removeEventListener('visibilitychange', onVisible) })
 
 // ---- picks carry over between sources (schedule scaffold <-> uploaded sheet) by game, following the *team* ----
 const keyOf = g => {
@@ -244,7 +261,9 @@ const SORTS = {
   worst: [x => x.signed, 1],
 }
 
-const hasResults = computed(() => !!scored.value && scored.value.wins + scored.value.losses + scored.value.pushes > 0)
+const liveRec = computed(() => scored.value?.live || { wins: 0, losses: 0, pushes: 0, points: 0 })
+const liveGames = computed(() => liveRec.value.wins + liveRec.value.losses + liveRec.value.pushes)
+const hasResults = computed(() => !!scored.value && scored.value.wins + scored.value.losses + scored.value.pushes + liveGames.value > 0)
 const sortOptions = computed(() => [
   ['time', 'Kickoff order'],
   ['ptsDesc', 'Points: high → low'],
@@ -265,6 +284,7 @@ const rowInfo = computed(() => games.value.map((g, i) => {
     g, i, pts,
     skip: g.status === 'skip',
     outcome: res?.outcome || 'pending',
+    live: res?.outcome === 'pending' ? res?.live || null : null,  // covering right now, game still on
     text: [g.fav, g.dog, ...teams].join(' ').toLowerCase(),
     pickHome: g.pick === 'fav' ? r.favHome : !r.favHome,
     moved: Math.abs(now?.delta || 0) + (now?.flipped ? 100 : 0),
@@ -404,11 +424,19 @@ const weekState = computed(() =>
     : editMode.value ? { cls: 'editing', text: 'Editing' }
       : savedLocked.value ? { cls: 'sent', text: '✓ Sent' } : { cls: 'draft', text: 'Draft' })
 const OUTCOME_TEXT = { win: 'covered', loss: 'missed', push: 'push', pending: 'not played yet', skipped: 'skipped' }
+const LIVE_TEXT = { win: 'live, covering', loss: 'live, not covering', push: 'live, on the number' }
 const tally = computed(() => {
-  const t = { win: 0, loss: 0, push: 0, pending: 0 }
-  for (const x of rowInfo.value) if (!x.skip && x.outcome in t) t[x.outcome]++
+  const t = { win: 0, loss: 0, push: 0, pending: 0, liveWin: 0, liveLoss: 0 }
+  for (const x of rowInfo.value) {
+    if (x.skip) continue
+    if (x.live === 'win') t.liveWin++
+    else if (x.live) t.liveLoss++   // losing or dead even: not cashing yet
+    else if (x.outcome in t) t[x.outcome]++
+  }
   return t
 })
+const segClass = x => (x.skip ? 'skipped' : x.live ? `live-${x.live}` : x.outcome)
+const segText = x => `${pickName(x.g)} ${x.skip ? '(no pick)' : x.pts}: ${x.skip ? 'skipped' : x.live ? LIVE_TEXT[x.live] : OUTCOME_TEXT[x.outcome]}`
 const savedLabel = computed(() => (savedAt.value ? new Date(savedAt.value.replace(' ', 'T') + 'Z').toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''))
 
 function startEdit() { editMode.value = true; tab.value = 'games' }
@@ -488,9 +516,19 @@ const signed = n => (n > 0 ? `+${n}` : `${n}`)
         <dl class="wh-stats">
           <div :class="['stat', 'score', scored.score > 0 ? 'pos' : scored.score < 0 ? 'neg' : '']">
             <dt>Score</dt><dd>{{ scored.score }}</dd>
+            <span v-if="liveGames" class="stat-live" title="Your score if every game on now ended as it stands">
+              <i class="ldot"></i>Live {{ scored.ifEndedNow }}
+            </span>
           </div>
           <div class="stat">
             <dt>Record</dt><dd>{{ scored.wins }}–{{ scored.losses }}<small v-if="scored.pushes">–{{ scored.pushes }}</small></dd>
+            <span v-if="liveGames" class="stat-live" title="Games in progress: covering – not covering (– on the number)">
+              <i class="ldot"></i>Live {{ liveRec.wins }}–{{ liveRec.losses }}<template v-if="liveRec.pushes">–{{ liveRec.pushes }}</template>
+            </span>
+          </div>
+          <div v-if="scored.pending" class="stat">
+            <dt>Max possible</dt><dd>{{ scored.maxScore }}</dd>
+            <span class="stat-sub">if every game left covers</span>
           </div>
           <div class="stat">
             <dt>Points won</dt><dd>{{ scored.earned }}<small> / {{ scored.wagered }}</small></dd>
@@ -500,14 +538,15 @@ const signed = n => (n > 0 ? `+${n}` : `${n}`)
           </div>
         </dl>
 
-        <div class="wh-strip" role="img" :aria-label="`${tally.win} covered, ${tally.loss} missed, ${tally.pending} still to play`">
-          <span v-for="x in rowInfo" :key="x.i" :class="['seg', x.skip ? 'skipped' : x.outcome]"
-                :title="`${pickName(x.g)} ${x.skip ? '(no pick)' : x.pts}: ${OUTCOME_TEXT[x.skip ? 'skipped' : x.outcome]}`"></span>
+        <div class="wh-strip" role="img" :aria-label="`${tally.win} covered, ${tally.loss} missed, ${tally.liveWin + tally.liveLoss} live, ${tally.pending} still to play`">
+          <span v-for="x in rowInfo" :key="x.i" :class="['seg', segClass(x)]" :title="segText(x)"></span>
         </div>
         <p class="wh-legend">
           <span><i class="dot win"></i>{{ tally.win }} covered</span>
           <span><i class="dot loss"></i>{{ tally.loss }} missed</span>
           <span v-if="tally.push"><i class="dot push"></i>{{ tally.push }} push</span>
+          <span v-if="tally.liveWin"><i class="dot live-win"></i>{{ tally.liveWin }} covering live</span>
+          <span v-if="tally.liveLoss"><i class="dot live-loss"></i>{{ tally.liveLoss }} not covering live</span>
           <span v-if="tally.pending"><i class="dot pending"></i>{{ tally.pending }} to play</span>
           <span v-if="penaltyRows.length || scored.adjustment" class="wh-adj">
             <template v-for="[n, v] in penaltyRows" :key="n">{{ n }} −{{ v }} · </template>
@@ -563,6 +602,7 @@ const signed = n => (n > 0 ? `+${n}` : `${n}`)
       <!-- ============ GAMES ============ -->
       <template v-if="tab === 'games'">
         <p v-if="showLinesbar" class="linesbar">
+          <span v-if="liveCount" class="livenote"><i class="ldot"></i>{{ liveCount }} game{{ liveCount > 1 ? 's' : '' }} live · scores update every 30s</span>
           <span v-if="fetchedLabel">DraftKings lines via ESPN · updated {{ fetchedLabel }}</span>
           <b v-if="changedCount" class="chg">⚠ {{ changedCount }} line{{ changedCount > 1 ? 's' : '' }} moved since your sheet</b>
           <span v-if="linesError" class="err">{{ linesError }}</span>

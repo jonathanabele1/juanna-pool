@@ -68,7 +68,8 @@ def weeks(user: dict = Depends(auth.current_user)):
     for w, games, p in user_weeks(user["id"]):
         s = scored(w["week"], games, p["adjustment"])
         out.append({"week": w["week"], "score": s["score"], "complete": s["complete"],
-                    "wins": s["wins"], "losses": s["losses"], "pushes": s["pushes"]})
+                    "wins": s["wins"], "losses": s["losses"], "pushes": s["pushes"],
+                    "live": sum(s["live"][k] for k in ("wins", "losses", "pushes")) > 0})
     return out
 
 

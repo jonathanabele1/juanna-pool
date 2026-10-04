@@ -28,6 +28,22 @@ class Scoring(unittest.TestCase):
         self.assertEqual((s["earned"], s["wins"], s["losses"], s["pushes"], s["pending"]), (13, 2, 1, 1, 1))
         self.assertFalse(s["complete"])
 
+    def test_live_games(self):
+        res = {**RES, "4": {"state": "in", "home_abbr": "KC", "away_abbr": "LV", "home_score": 14, "away_score": 10}}
+        w = {"week": 1, "adjustment": 0, "games": [
+            game("1", "BUF", 6.5, "fav", 10),   # final win
+            game("4", "KC", 3, "fav", 20),      # KC up 4, covering 3
+            game("4", "KC", 3, "dog", 5),       # LV +3 losing by 1 against the number
+            game("4", "KC", 4, "fav", 6),       # dead even with the number
+            game("3", "X", 3, "fav", 2),        # not started
+        ]}
+        s = score_week(w, res)
+        self.assertEqual([g.get("live") for g in s["games"]], [None, "win", "loss", "push", None])
+        self.assertEqual(s["games"][1]["liveMargin"], 1)
+        self.assertEqual(s["live"], {"wins": 1, "losses": 1, "pushes": 1, "points": 20})
+        self.assertEqual(s["ifEndedNow"], 10 + 20)
+        self.assertEqual(s["maxScore"], 10 + 20 + 5 + 6 + 2)
+
     def test_penalties_and_adjustment(self):
         gs = [game("1", "BUF", 6.5, "fav", 25 if False else 20) for _ in range(4)]  # 4 double-digit, total 80
         gs.append(game("1", "BUF", 6.5, "fav", 30, status="sent"))  # total 110 -> over by 10

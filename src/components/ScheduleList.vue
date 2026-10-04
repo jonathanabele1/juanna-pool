@@ -19,6 +19,15 @@ const days = computed(() => {
   return out
 })
 const final = ev => ev.state === 'post' && ev.scores?.home != null
+const scored = ev => ['in', 'post'].includes(ev.state) && ev.scores?.home != null
+const clock = ev => {
+  const l = ev.live
+  if (!l) return 'Live'
+  if (l.halftime) return 'Half'
+  if (l.endOfPeriod) return `End ${l.quarter}`
+  return [l.quarter, l.clock].filter(Boolean).join(' ')
+}
+const trailing = (ev, side) => final(ev) && ev.scores[side] < ev.scores[side === 'home' ? 'away' : 'home']
 </script>
 
 <template>
@@ -29,15 +38,17 @@ const final = ev => ev.state === 'post' && ev.scores?.home != null
         <div class="team">
           <img v-if="ev.away.logo" :src="ev.away.logo" alt="" />
           <span><b>{{ ev.away.name }}</b><small>{{ ev.away.record || ev.away.location }}</small></span>
-          <span v-if="final(ev)" class="score">{{ ev.scores.away }}</span>
+          <span v-if="scored(ev)" :class="['score', { trailing: trailing(ev, 'away') }]">{{ ev.scores.away }}<i v-if="ev.live?.possession === ev.away.abbr" class="ball">🏈</i></span>
         </div>
         <span class="at">@</span>
         <div class="team home">
-          <span v-if="final(ev)" class="score">{{ ev.scores.home }}</span>
+          <span v-if="scored(ev)" :class="['score', { trailing: trailing(ev, 'home') }]"><i v-if="ev.live?.possession === ev.home.abbr" class="ball">🏈</i>{{ ev.scores.home }}</span>
           <span><b>{{ ev.home.name }}</b><small>{{ ev.home.record || ev.home.location }}</small></span>
           <img v-if="ev.home.logo" :src="ev.home.logo" alt="" />
         </div>
-        <span class="when">{{ final(ev) ? 'Final' : ev.state === 'in' ? 'Live' : timeOf(ev.kickoff) }}</span>
+        <span v-if="final(ev)" class="when final">Final</span>
+        <span v-else-if="ev.state === 'in'" class="when live"><i></i>{{ clock(ev) }}</span>
+        <span v-else class="when">{{ timeOf(ev.kickoff) }}</span>
       </div>
     </div>
   </section>
@@ -53,12 +64,18 @@ const final = ev => ev.state === 'post' && ev.scores?.home != null
 .team span { display: flex; flex-direction: column; min-width: 0; }
 .team b { font-size: .92rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .team small { color: #94a3b8; font-size: .72rem; }
-.team .score { font-weight: 800; font-size: 1.05rem; color: #0f172a; }
+.team .score { font-weight: 800; font-size: 1.05rem; color: #0f172a; flex-direction: row; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
+.team .score.trailing { color: #94a3b8; }
+.ball { font-style: normal; font-size: .7rem; }
+.when.final { justify-self: end; font-weight: 800; font-size: .66rem; letter-spacing: .06em; text-transform: uppercase; color: #fff; background: #0f172a; padding: 3px 8px; border-radius: 999px; }
+.when.live { display: inline-flex; align-items: center; justify-content: flex-end; gap: 5px; color: #b91c1c; font-weight: 800; font-variant-numeric: tabular-nums; }
+.when.live i { width: 7px; height: 7px; border-radius: 50%; background: #dc2626; animation: blink 1.4s ease-in-out infinite; }
+@keyframes blink { 50% { opacity: .35; } }
 .at { color: #cbd5e1; font-weight: 700; }
 .when { text-align: right; font-size: .78rem; font-weight: 600; color: #64748b; }
 @media (max-width: 480px) {
   .row { grid-template-columns: 1fr auto 1fr; }
-  .when { grid-column: 1 / -1; text-align: center; margin-top: -4px; }
+  .when { grid-column: 1 / -1; text-align: center; margin-top: -4px; justify-self: center; }
   .team img { width: 24px; height: 24px; }
 }
 </style>

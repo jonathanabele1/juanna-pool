@@ -15,12 +15,16 @@ const props = defineProps({
   ats: Object,           // {w,l,p} cover record on your sheets going into this week
   readonly: Boolean,     // view mode: shows the pick but can't change it
   noLine: Boolean,       // scheduled game with no spread posted yet
+  live: String,          // 'win' | 'loss' | 'push': picked card while the game is on, covering or not
+  possession: Boolean,   // this team has the ball
+  trailing: Boolean,     // final, and this team lost
 })
 defineEmits(['select', 'update:raw'])
 
 const broken = ref(false)
 const OUTCOME_COLOR = { win: '#16a34a', loss: '#dc2626', push: '#64748b' }
-const accent = computed(() => OUTCOME_COLOR[props.outcome] || (props.team?.color ? `#${props.team.color}` : '#16a34a'))
+const LIVE_COLOR = { win: '#4ade80', loss: '#eab308', push: '#94a3b8' }
+const accent = computed(() => OUTCOME_COLOR[props.outcome] || LIVE_COLOR[props.live] || (props.team?.color ? `#${props.team.color}` : '#16a34a'))
 
 const pickem = computed(() => !props.spread)
 const spreadText = computed(() => (props.noLine ? '—' : pickem.value ? 'PK' : props.role === 'fav' ? `−${props.spread}` : `+${props.spread}`))
@@ -57,14 +61,14 @@ const atsText = computed(() => {
           {{ city }}
           <span :class="['where', home ? 'home' : 'away']">{{ home ? '⌂ HOME' : '✈ AWAY' }}</span>
         </span>
-        <span class="nick">{{ nick }}</span>
+        <span class="nick">{{ nick }}<i v-if="possession" class="ball" title="Has the ball">🏈</i></span>
         <span v-if="team?.record || atsText" class="rec">
           <span v-if="team?.record" class="su" title="Overall record going into this game">{{ dash(team.record) }}</span>
           <span v-if="atsText" class="ats" title="Cover record against your sheet lines (weeks before this one)">ATS {{ atsText }}</span>
         </span>
       </span>
-      <span v-if="score != null" class="score">{{ score }}</span>
-      <span v-if="selected && !editing" :class="['check', { end: score == null }]" aria-hidden="true">{{ outcome === 'loss' ? '✗' : outcome === 'push' ? '=' : '✓' }}</span>
+      <span v-if="score != null" :class="['score', { trailing }]">{{ score }}</span>
+      <span v-if="selected && !editing" :class="['check', { end: score == null }]" aria-hidden="true">{{ outcome === 'loss' ? '✗' : outcome === 'push' ? '=' : live === 'loss' ? '!' : '✓' }}</span>
     </span>
 
     <input
@@ -123,6 +127,8 @@ const atsText = computed(() => {
 .ats { color: #64748b; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 .score { margin-left: auto; font-size: 1.6rem; font-weight: 800; color: #334155; font-variant-numeric: tabular-nums; }
+.score.trailing { color: #94a3b8; font-weight: 700; }
+.ball { font-style: normal; font-size: .8rem; margin-left: 6px; vertical-align: 2px; }
 .check {
   flex: none; width: 22px; height: 22px; border-radius: 50%;
   display: grid; place-items: center; background: var(--accent); color: #fff; font-size: .8rem; font-weight: 800;

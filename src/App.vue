@@ -85,7 +85,7 @@ watch(asAdmin, on => { if (!on && user.value && tab.value === 'admin') tab.value
       <template v-if="week">
         <div v-show="tab === 'picks'">
           <WeekBar v-model="week" :current-week="currentWeek" :summaries="summaries" />
-          <PicksView :key="`${week}-${asAdmin}`" :week="week" :current-week="currentWeek" :is-admin="asAdmin" @saved="refreshSummaries" />
+          <PicksView :key="`${week}-${asAdmin}`" :week="week" :current-week="currentWeek" :is-admin="asAdmin" @saved="refreshSummaries" @scored="refreshSummaries" />
         </div>
         <StatsView v-if="tab === 'stats'" :key="statsKey" />
         <AdminView v-if="tab === 'admin' && asAdmin" :me="user" :current-week="currentWeek || week" @announcement="announcement = $event" />

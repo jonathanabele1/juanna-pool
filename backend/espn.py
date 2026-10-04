@@ -11,7 +11,7 @@ from . import db
 
 ESPN = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
 SEASON = 2026
-LIVE_TTL = 60
+LIVE_TTL = 30  # seconds; games in progress refresh this often
 FINAL_TTL = 3600
 
 _cache: dict = {}  # key (week|None) -> (fetched_at, data)
@@ -55,6 +55,29 @@ def _score(c: dict):
         return None
 
 
+def _live(e: dict, home: dict, away: dict) -> dict | None:
+    """Clock, quarter and down-and-distance for a game in progress (whatever ESPN has)."""
+    st = e["status"]
+    if st["type"]["state"] != "in":
+        return None
+    sit = e["competitions"][0].get("situation") or {}
+    ids = {home["team"]["id"]: home["team"]["abbreviation"], away["team"]["id"]: away["team"]["abbreviation"]}
+    period = st.get("period") or 0
+    name = st["type"].get("name", "")
+    return {
+        "period": period,
+        "quarter": "OT" if period > 4 else f"Q{period}" if period else "",
+        "clock": st.get("displayClock"),
+        "halftime": name == "STATUS_HALFTIME",
+        "endOfPeriod": name == "STATUS_END_PERIOD",
+        "possession": ids.get(sit.get("possession")),
+        "down": sit.get("shortDownDistanceText"),
+        "spot": sit.get("possessionText"),
+        "redZone": bool(sit.get("isRedZone")) and bool(sit.get("possession")),
+        "lastPlay": ((sit.get("lastPlay") or {}).get("text") or "").strip() or None,
+    }
+
+
 def _event(e: dict) -> dict:
     comp = e["competitions"][0]
     home = next(c for c in comp["competitors"] if c["homeAway"] == "home")
@@ -83,6 +106,7 @@ def _event(e: dict) -> dict:
         "kickoff": e["date"],
         "state": st["state"],  # pre | in | post
         "detail": st.get("shortDetail", ""),
+        "live": _live(e, home, away),
         "home": {**_team(home), "record": hrec},
         "away": {**_team(away), "record": arec},
         "scores": {"home": hs, "away": as_},

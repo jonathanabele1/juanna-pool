@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import TeamCard from './TeamCard.vue'
-import { resolveGame } from '../lines.js'
+import { coverNow, resolveGame } from '../lines.js'
 
 const props = defineProps({
   game: Object, events: Array, now: Object, result: Object, ats: Object,
@@ -35,11 +35,52 @@ const lineText = computed(() => {
   return g.value.spread ? `${fav} −${g.value.spread}` : 'PK'
 })
 const dayText = computed(() => `${DAY_NAMES[g.value.day] || g.value.day}${g.value.time ? ` · ${g.value.time}` : ''}`)
-const started = computed(() => !!props.now?.locked)
-const final = computed(() => props.result?.state === 'post')
-const showScore = computed(() => ['in', 'post'].includes(props.result?.state) && props.result?.favScore != null)
-const outcome = computed(() => (final.value && ['win', 'loss', 'push'].includes(props.result.outcome) ? props.result.outcome : null))
-const scoreFor = key => (showScore.value ? props.result[key === 'fav' ? 'favScore' : 'dogScore'] : null)
+const ev = computed(() => r.value.event)
+const gameState = computed(() => ev.value?.state || props.result?.state)
+const started = computed(() => !!props.now?.locked || gameState.value === 'in')
+const live = computed(() => gameState.value === 'in')
+const final = computed(() => gameState.value === 'post')
+const info = computed(() => ev.value?.live || null)  // clock, quarter, down & distance
+
+// scores straight from the scoreboard (freshest), else what the server scored
+const evScore = key => {
+  const team = key === 'fav' ? r.value.favTeam : r.value.dogTeam
+  if (!ev.value || !team) return null
+  return ev.value.scores?.[team === ev.value.home ? 'home' : 'away'] ?? null
+}
+const scoreFor = key => {
+  if (!live.value && !final.value) return null
+  return evScore(key) ?? props.result?.[key === 'fav' ? 'favScore' : 'dogScore'] ?? null
+}
+const leader = computed(() => {
+  if (!final.value) return null
+  const f = scoreFor('fav'), d = scoreFor('dog')
+  return f == null || d == null || f === d ? null : f > d ? 'fav' : 'dog'
+})
+
+// your side against the sheet spread, right now
+const cover = computed(() => (g.value.status === 'skip' ? null : coverNow(g.value, props.events)))
+const outcome = computed(() => {
+  if (!final.value || g.value.status === 'skip') return null
+  const o = props.result?.outcome
+  return ['win', 'loss', 'push'].includes(o) ? o : cover.value?.status || null
+})
+const liveStatus = computed(() => (live.value ? cover.value?.status || null : null))
+const num = n => String(Math.abs(n)).replace('.5', '½')
+const coverText = computed(() => {
+  const c = cover.value
+  if (!c) return ''
+  return c.status === 'push' ? 'On the number' : c.status === 'win' ? `Covering by ${num(c.margin)}` : `Short by ${num(c.margin)}`
+})
+const clockText = computed(() => {
+  const l = info.value
+  if (!l) return ev.value?.detail || ''
+  if (l.halftime) return 'Halftime'
+  if (l.endOfPeriod) return `End of ${l.quarter}`
+  return [l.quarter, l.clock].filter(Boolean).join(' · ')
+})
+const finalText = computed(() => (/OT/.test(ev.value?.detail || '') ? 'Final · OT' : 'Final'))
+const sideAbbr = key => (key === 'fav' ? r.value.favTeam : r.value.dogTeam)?.abbr
 const pickedName = computed(() => (g.value.pick === 'fav' ? r.value.favTeam : r.value.dogTeam)?.name || g.value[g.value.pick])
 
 const pts = computed({
@@ -56,7 +97,7 @@ const deltaText = d => (d > 0 ? `▲ +${d}` : `▼ ${d}`)
 </script>
 
 <template>
-  <article :class="['game', { off: g.status === 'skip', sent: g.status === 'sent', ro: readonly }]">
+  <article :class="['game', { off: g.status === 'skip', sent: g.status === 'sent', ro: readonly, live, final }, outcome && `is-${outcome}`, liveStatus && `live-${liveStatus}`]">
     <header class="meta">
       <div v-if="!readonly" class="seg" role="radiogroup" aria-label="Pick status">
         <button
@@ -72,8 +113,12 @@ const deltaText = d => (d > 0 ? `▲ +${d}` : `▼ ${d}`)
       <span v-else :class="['pill', 'st', g.status]">{{ STATUS_LABEL[g.status] }}</span>
 
       <span v-if="showDay" class="pill day">{{ dayText }}</span>
-      <span v-if="final" class="pill final">Final</span>
-      <span v-else-if="started" class="pill started">{{ result?.state === 'in' ? 'Live' : 'Started' }}</span>
+      <span v-if="final" class="pill final">{{ finalText }}</span>
+      <template v-else-if="live">
+        <span class="pill live"><i class="pulse"></i>Live</span>
+        <span v-if="clockText" class="pill clock">{{ clockText }}</span>
+      </template>
+      <span v-else-if="started" class="pill started">Started</span>
       <span v-else-if="g.pastDue && g.status === 'email'" class="pill pastdue" title="Past the pick deadline. You can still change it.">Past due</span>
 
       <span class="spacer"></span>
@@ -83,8 +128,12 @@ const deltaText = d => (d > 0 ? `▲ +${d}` : `▼ ${d}`)
         {{ outcome === 'win' ? 'Covered' : outcome === 'loss' ? 'Missed' : 'Push' }}
         <b>{{ outcome === 'win' ? `+${result.earned}` : outcome === 'loss' ? `0 of ${g.points}` : '0' }}</b>
       </span>
+      <span v-else-if="live && cover" :class="['pill', 'cov', cover.status]" title="Your pick against the sheet spread, if it ended now">
+        {{ coverText }}
+        <b v-if="cover.status === 'win'">+{{ g.points }}</b>
+      </span>
       <span
-        v-else
+        v-else-if="!live && !final"
         :class="['pill', 'now', { changed: now?.changed, flipped: now?.flipped }]"
         :title="now?.title"
       >
@@ -111,12 +160,23 @@ const deltaText = d => (d > 0 ? `▲ +${d}` : `▼ ${d}`)
         :ats="ats?.[s.team?.abbr]"
         :score="scoreFor(s.key)"
         :outcome="g.pick === s.key ? outcome : null"
+        :live="g.pick === s.key ? liveStatus : null"
+        :possession="live && !!info?.possession && info.possession === sideAbbr(s.key)"
+        :trailing="!!leader && leader !== s.key"
         @select="g.pick = s.key"
         @update:raw="g[s.key] = $event"
         :style="{ gridColumn: i === 0 ? 1 : 3 }"
       />
       <span class="at">@</span>
     </div>
+
+    <p v-if="live && (info?.down || info?.lastPlay)" class="situation">
+      <span v-if="info.down" :class="['down', { rz: info.redZone }]">
+        <b v-if="info.possession">{{ info.possession }} ball ·</b> {{ info.down }}<template v-if="info.spot"> at {{ info.spot }}</template>
+        <em v-if="info.redZone">Red zone</em>
+      </span>
+      <span v-if="info.lastPlay" class="last" :title="info.lastPlay">{{ info.lastPlay }}</span>
+    </p>
 
     <footer v-if="!readonly" class="foot">
       <span class="picked">
@@ -177,7 +237,29 @@ const deltaText = d => (d > 0 ? `▲ +${d}` : `▼ ${d}`)
 .pill.st.skip { background: #fee2e2; color: #991b1b; }
 .pill.day { background: #fff; box-shadow: inset 0 0 0 1px #e2e8f0; }
 .pill.line { background: #0f172a; color: #fff; }
-.pill.final { background: #e2e8f0; color: #334155; }
+.pill.final { background: #0f172a; color: #fff; letter-spacing: .04em; text-transform: uppercase; }
+.pill.live { background: #dc2626; color: #fff; letter-spacing: .06em; text-transform: uppercase; gap: 6px; }
+.pill.clock { background: #fef2f2; color: #991b1b; font-variant-numeric: tabular-nums; }
+.pill.cov.win { background: #dcfce7; color: #166534; }
+.pill.cov.loss { background: #fef3c7; color: #92400e; }
+.pill.cov.push { background: #e2e8f0; color: #334155; }
+.pulse { width: 7px; height: 7px; border-radius: 50%; background: #fff; animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.7); } }
+@media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+
+/* live: red ring; final: a left edge in the result's color */
+.game.live { box-shadow: 0 0 0 2px #fca5a5, 0 4px 14px #dc26261a; }
+.game.live.live-win { box-shadow: 0 0 0 2px #86efac, 0 4px 14px #16a34a1a; }
+.game.live.live-loss { box-shadow: 0 0 0 2px #fcd34d, 0 4px 14px #d977061a; }
+.game.final { box-shadow: inset 5px 0 0 #94a3b8, 0 1px 2px #0000000d; }
+.game.final.is-win { box-shadow: inset 5px 0 0 #22c55e, 0 1px 2px #0000000d; }
+.game.final.is-loss { box-shadow: inset 5px 0 0 #ef4444, 0 1px 2px #0000000d; }
+.game.final { padding-left: 17px; }
+
+.situation { display: flex; flex-direction: column; gap: 3px; margin: 10px 0 0; padding: 8px 12px; border-radius: 12px; background: #f8fafc; font-size: .8rem; color: #334155; }
+.situation .down { font-weight: 600; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.situation .down em { font-style: normal; font-size: .64rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; background: #fee2e2; color: #b91c1c; }
+.situation .last { color: #64748b; font-size: .76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pill.res.win { background: #dcfce7; color: #166534; }
 .pill.res.loss { background: #fee2e2; color: #991b1b; }
 .pill.res.push { background: #e2e8f0; color: #334155; }

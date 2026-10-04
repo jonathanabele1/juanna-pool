@@ -25,9 +25,13 @@ def _result(g: dict, results: dict) -> dict | None:
     fav_home = res["home_abbr"] == g["favAbbr"]
     fav = res["home_score"] if fav_home else res["away_score"]
     dog = res["away_score"] if fav_home else res["home_score"]
-    out = {"state": res["state"], "fav": fav, "dog": dog, "margin": None}
-    if res["state"] == "post" and fav is not None and dog is not None:
-        out["margin"] = fav - dog - float(g.get("spread") or 0)  # >0: favorite covers
+    out = {"state": res["state"], "fav": fav, "dog": dog, "margin": None, "liveMargin": None}
+    if fav is not None and dog is not None:
+        m = fav - dog - float(g.get("spread") or 0)  # >0: favorite covers
+        if res["state"] == "post":
+            out["margin"] = m
+        elif res["state"] == "in":
+            out["liveMargin"] = m
     return out
 
 
@@ -52,6 +56,11 @@ def score_week(week: dict, results: dict) -> dict:
                     won = (r["margin"] > 0) == (g.get("pick") == "fav")
                     entry["outcome"] = "win" if won else "loss"
                     entry["earned"] = pts if won else 0
+            elif r["liveMargin"] is not None:
+                # still playing: who'd cover if it ended now (margin from your pick's side)
+                mine = r["liveMargin"] if g.get("pick") == "fav" else -r["liveMargin"]
+                entry["liveMargin"] = mine
+                entry["live"] = "push" if mine == 0 else "win" if mine > 0 else "loss"
         picked.append({**g, "points": pts, **entry})
         per_game.append(entry)
 
@@ -59,6 +68,9 @@ def score_week(week: dict, results: dict) -> dict:
     earned = sum(g["earned"] for g in picked)
     count = lambda o: sum(1 for g in picked if g["outcome"] == o)
     adjustment = int(week.get("adjustment") or 0)
+    score = earned - sum(pen.values()) + adjustment
+    live = lambda o: sum(1 for g in picked if g.get("live") == o)
+    live_pts = sum(g["points"] for g in picked if g.get("live") == "win")
     return {
         "games": per_game,
         "earned": earned,
@@ -68,7 +80,11 @@ def score_week(week: dict, results: dict) -> dict:
         "penalties": pen,
         "penaltyTotal": sum(pen.values()),
         "adjustment": adjustment,
-        "score": earned - sum(pen.values()) + adjustment,
+        "score": score,
+        # live: games in progress, by who's covering right now
+        "live": {"wins": live("win"), "losses": live("loss"), "pushes": live("push"), "points": live_pts},
+        "ifEndedNow": score + live_pts,
+        "maxScore": score + sum(g["points"] for g in picked if g["outcome"] == "pending"),
         "complete": bool(picked) and count("pending") == 0,
         "_picked": picked,
     }

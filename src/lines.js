@@ -50,3 +50,17 @@ export function resolveGame(g, events) {
   const espnFavHome = favTeam === ev.home
   return { event: ev, favTeam, dogTeam, favHome: g.favHome ?? espnFavHome }
 }
+
+// A game in progress or finished, from your pick's side: { state, margin, status: 'win'|'loss'|'push' }.
+// margin > 0 means your side is covering the sheet spread by that much.
+export function coverNow(g, events) {
+  const r = resolveGame(g, events)
+  const ev = r.event
+  if (!ev || !['in', 'post'].includes(ev.state) || ev.scores?.home == null || ev.scores?.away == null) return null
+  const favHome = r.favTeam === ev.home
+  const fav = favHome ? ev.scores.home : ev.scores.away
+  const dog = favHome ? ev.scores.away : ev.scores.home
+  const m = fav - dog - (Number(g.spread) || 0)
+  const margin = g.pick === 'dog' ? -m : m
+  return { state: ev.state, margin, status: margin > 0 ? 'win' : margin < 0 ? 'loss' : 'push' }
+}
