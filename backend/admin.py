@@ -42,6 +42,11 @@ class Announcement(BaseModel):
     text: str = ""
 
 
+class Signup(BaseModel):
+    open: bool = True
+    code: str = ""
+
+
 # ---------------- users ----------------
 
 @router.get("/users")
@@ -51,9 +56,7 @@ def users():
 
 @router.post("/users")
 def create_user(body: NewUser):
-    username = body.username.strip()
-    if not username or " " in username:
-        raise HTTPException(400, "Username can't be blank or contain spaces")
+    username = auth.validate_username(body.username)
     auth.validate_password(body.password)
     try:
         return db.create_user(username, body.displayName.strip() or username, auth.hash_password(body.password),
@@ -139,6 +142,18 @@ def delete_lines(n: int):
 def set_announcement(body: Announcement):
     db.set_setting("announcement", body.text.strip())
     return {"text": body.text.strip()}
+
+
+@router.get("/signup")
+def get_signup():
+    return auth.signup_settings()
+
+
+@router.put("/signup")
+def set_signup(body: Signup):
+    db.set_setting("signup_open", "1" if body.open else "0")
+    db.set_setting("signup_code", body.code.strip())
+    return auth.signup_settings()
 
 
 @router.get("/backup")

@@ -1,12 +1,14 @@
 """Username/password login. Passwords are scrypt-hashed; a login sets an httpOnly session cookie.
 
-Accounts are created by an admin (no public sign-up). The very first admin comes from the
-ADMIN_USERNAME / ADMIN_PASSWORD environment variables, or `python -m backend.manage create-user`.
+Players create their own accounts (an admin can close sign-ups or require a join code). The very first
+admin comes from the ADMIN_USERNAME / ADMIN_PASSWORD environment variables, or `python -m backend.manage`.
 """
 import hashlib
 import hmac
 import os
+import re
 import secrets
+import sqlite3
 import time
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
@@ -41,6 +43,13 @@ def check_password(password: str, stored: str) -> bool:
 def validate_password(password: str) -> None:
     if len(password) < MIN_PASSWORD:
         raise HTTPException(400, f"Password must be at least {MIN_PASSWORD} characters")
+
+
+def validate_username(username: str) -> str:
+    name = " ".join(username.split())
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._'-]{1,29}", name):
+        raise HTTPException(400, "Username must be 2–30 letters, numbers or spaces")
+    return name
 
 
 def bootstrap_admin() -> None:
@@ -88,6 +97,12 @@ class LoginIn(BaseModel):
     password: str
 
 
+class SignupIn(BaseModel):
+    username: str
+    password: str
+    code: str = ""
+
+
 class PasswordIn(BaseModel):
     current: str
     new: str
@@ -105,13 +120,42 @@ def login(body: LoginIn, request: Request, response: Response):
         for k in keys:
             _fails[k].append(time.time())
         raise HTTPException(401, "Wrong username or password")
-    user = found[0]
+    return _start_session(found[0], request, response)
+
+
+def _start_session(user: dict, request: Request, response: Response) -> dict:
     token = secrets.token_urlsafe(32)
     expires = datetime.now(timezone.utc) + timedelta(days=SESSION_DAYS)
     db.create_session(_token_hash(token), user["id"], expires.strftime("%Y-%m-%d %H:%M:%S"))
     https = request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
     response.set_cookie(COOKIE, token, max_age=SESSION_DAYS * 86400, httponly=True, samesite="lax", secure=https)
     return user
+
+
+def signup_settings() -> dict:
+    return {"open": db.get_setting("signup_open", "1") == "1", "code": db.get_setting("signup_code")}
+
+
+@router.get("/signup")
+def signup_info():
+    s = signup_settings()
+    return {"open": s["open"], "needsCode": bool(s["code"])}
+
+
+@router.post("/signup")
+def signup(body: SignupIn, request: Request, response: Response):
+    s = signup_settings()
+    if not s["open"]:
+        raise HTTPException(403, "Sign-ups are closed. Ask the pool admin for an account.")
+    if s["code"] and not hmac.compare_digest(body.code.strip().lower(), s["code"].lower()):
+        raise HTTPException(403, "That join code isn't right. Ask the pool admin for it.")
+    username = validate_username(body.username)
+    validate_password(body.password)
+    try:
+        user = db.create_user(username, username, hash_password(body.password))
+    except sqlite3.IntegrityError:
+        raise HTTPException(400, f"“{username}” is already taken")
+    return _start_session(user, request, response)
 
 
 @router.post("/logout")

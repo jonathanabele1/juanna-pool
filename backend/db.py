@@ -24,9 +24,13 @@ CREATE TABLE IF NOT EXISTS users (
   username TEXT NOT NULL UNIQUE COLLATE NOCASE,
   display_name TEXT NOT NULL DEFAULT '',
   password_hash TEXT NOT NULL,
-  is_admin INTEGER NOT NULL DEFAULT 0,
   active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+-- a user is an admin when they have a row here
+CREATE TABLE IF NOT EXISTS admins (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  added_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash TEXT PRIMARY KEY,
@@ -74,6 +78,7 @@ CREATE TABLE IF NOT EXISTS results (
 def conn() -> sqlite3.Connection:
     c = sqlite3.connect(DB_PATH)
     c.row_factory = sqlite3.Row
+    c.execute("PRAGMA foreign_keys = ON")
     return c
 
 
@@ -116,6 +121,9 @@ def init() -> None:
         if "adj_note" in _columns(c, "weeks"):
             _migrate_single_user(c)
         c.executescript(SCHEMA)
+        if "is_admin" in _columns(c, "users"):  # admin flag moved to its own table
+            c.execute("INSERT OR IGNORE INTO admins (user_id) SELECT id FROM users WHERE is_admin=1")
+            c.execute("ALTER TABLE users DROP COLUMN is_admin")
         if "kickoff" not in _columns(c, "results"):
             c.execute("ALTER TABLE results ADD COLUMN kickoff TEXT")
 
@@ -124,6 +132,9 @@ init()
 
 
 # ---------------- users + sessions ----------------
+
+USER_SQL = "SELECT u.*, EXISTS (SELECT 1 FROM admins a WHERE a.user_id = u.id) AS is_admin FROM users u"
+
 
 def _user_row(r) -> dict | None:
     if not r:
@@ -139,20 +150,22 @@ def count_users() -> int:
 
 def create_user(username: str, display_name: str, password_hash: str, is_admin: bool = False) -> dict:
     with conn() as c:
-        cur = c.execute("INSERT INTO users (username, display_name, password_hash, is_admin) VALUES (?,?,?,?)",
-                        (username, display_name, password_hash, int(is_admin)))
-        return _user_row(c.execute("SELECT * FROM users WHERE id=?", (cur.lastrowid,)).fetchone())
+        cur = c.execute("INSERT INTO users (username, display_name, password_hash) VALUES (?,?,?)",
+                        (username, display_name, password_hash))
+        if is_admin:
+            c.execute("INSERT INTO admins (user_id) VALUES (?)", (cur.lastrowid,))
+        return _user_row(c.execute(f"{USER_SQL} WHERE u.id=?", (cur.lastrowid,)).fetchone())
 
 
 def get_user(user_id: int) -> dict | None:
     with conn() as c:
-        return _user_row(c.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone())
+        return _user_row(c.execute(f"{USER_SQL} WHERE u.id=?", (user_id,)).fetchone())
 
 
 def get_login(username: str) -> tuple[dict, str] | None:
     """(user, password_hash) for a login attempt."""
     with conn() as c:
-        r = c.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+        r = c.execute(f"{USER_SQL} WHERE u.username=?", (username,)).fetchone()
     return (_user_row(r), r["password_hash"]) if r else None
 
 
@@ -164,17 +177,21 @@ def get_password_hash(user_id: int) -> str | None:
 
 def list_users() -> list[dict]:
     with conn() as c:
-        return [_user_row(r) for r in c.execute("SELECT * FROM users ORDER BY display_name COLLATE NOCASE, username")]
+        return [_user_row(r) for r in c.execute(f"{USER_SQL} ORDER BY u.display_name COLLATE NOCASE, u.username")]
 
 
-def update_user(user_id: int, **fields) -> dict | None:
-    cols = {"display_name": "display_name", "password_hash": "password_hash", "is_admin": "is_admin", "active": "active"}
-    sets = [(cols[k], int(v) if isinstance(v, bool) else v) for k, v in fields.items() if k in cols and v is not None]
+def update_user(user_id: int, is_admin: bool | None = None, **fields) -> dict | None:
+    cols = ("display_name", "password_hash", "active")
+    sets = [(k, int(v) if isinstance(v, bool) else v) for k, v in fields.items() if k in cols and v is not None]
     with conn() as c:
         if sets:
             c.execute(f"UPDATE users SET {', '.join(f'{k}=?' for k, _ in sets)} WHERE id=?",
                       [v for _, v in sets] + [user_id])
-        return _user_row(c.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone())
+        if is_admin is True:
+            c.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (user_id,))
+        elif is_admin is False:
+            c.execute("DELETE FROM admins WHERE user_id=?", (user_id,))
+        return _user_row(c.execute(f"{USER_SQL} WHERE u.id=?", (user_id,)).fetchone())
 
 
 def create_session(token_hash: str, user_id: int, expires_at: str) -> None:
@@ -185,8 +202,8 @@ def create_session(token_hash: str, user_id: int, expires_at: str) -> None:
 
 def session_user(token_hash: str) -> dict | None:
     with conn() as c:
-        r = c.execute("""SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id
-                         WHERE s.token_hash=? AND s.expires_at > datetime('now') AND u.active=1""",
+        r = c.execute(f"""{USER_SQL} JOIN sessions s ON s.user_id = u.id
+                          WHERE s.token_hash=? AND s.expires_at > datetime('now') AND u.active=1""",
                       (token_hash,)).fetchone()
     return _user_row(r)
 

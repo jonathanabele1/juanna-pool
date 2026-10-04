@@ -61,6 +61,14 @@ const resetFor = ref(null)
 const resetPw = ref('')
 
 const loadUsers = async () => { users.value = await admin.users() }
+
+const signupCfg = reactive({ open: true, code: '' })
+async function saveSignup() {
+  try {
+    Object.assign(signupCfg, await admin.setSignup({ ...signupCfg }))
+    flash(notes, 'signup', 'Saved')
+  } catch (e) { flash(notes, 'signup', e.message) }
+}
 function randomPassword() {
   const words = ['blitz', 'punt', 'spiral', 'huddle', 'sack', 'snap', 'redzone', 'endzone', 'gridiron', 'kickoff']
   nu.password = `${words[Math.floor(Math.random() * words.length)]}${Math.floor(100 + Math.random() * 900)}`
@@ -109,6 +117,7 @@ async function doRestore() {
 onMounted(() => {
   loadWeek()
   loadUsers()
+  admin.signup().then(c => Object.assign(signupCfg, c)).catch(() => {})
   getAnnouncement().then(a => (announcement.value = a.text)).catch(() => {})
 })
 </script>
@@ -183,6 +192,18 @@ onMounted(() => {
     <!-- ============ ACCOUNTS ============ -->
     <section class="card">
       <h3>Accounts</h3>
+      <div class="signup">
+        <label class="chk"><input type="checkbox" v-model="signupCfg.open" /> Players can create their own accounts</label>
+        <label v-if="signupCfg.open" class="code">Join code <input v-model="signupCfg.code" placeholder="optional, e.g. blitz26" /></label>
+        <button class="btn ghost sm" @click="saveSignup">Save</button>
+        <small class="note">{{ notes.signup }}</small>
+      </div>
+      <p class="muted">
+        <template v-if="!signupCfg.open">Sign-ups are closed, so add players below.</template>
+        <template v-else-if="signupCfg.code">New players need the join code to sign up. Send it with the link.</template>
+        <template v-else>Anyone with the link can sign up. Add a join code to keep strangers out.</template>
+      </p>
+      <h4>Add a player yourself</h4>
       <form class="newuser" @submit.prevent="addUser">
         <input v-model="nu.displayName" placeholder="Name (e.g. Mike S.)" />
         <input v-model="nu.username" placeholder="Username" autocapitalize="none" required />
@@ -280,6 +301,9 @@ td.c { text-align: center; }
 .tot.bad { color: #b45309; }
 tr.inactive, li.inactive { opacity: .55; }
 .danger { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; font-size: .85rem; }
+.signup { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.code { display: flex; align-items: center; gap: 6px; font-size: .85rem; }
+.code input { width: 160px; }
 .newuser { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .newuser input { flex: 1 1 150px; min-width: 0; }
 .pwrow { display: flex; gap: 6px; flex: 1 1 220px; }

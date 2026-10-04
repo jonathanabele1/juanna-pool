@@ -13,6 +13,8 @@ const send = (method, url, body) => call(url, { method, headers: JSON_HEADERS, b
 
 export const getMe = () => call('/api/auth/me')
 export const login = (username, password) => send('POST', '/api/auth/login', { username, password })
+export const getSignupInfo = () => call('/api/auth/signup')
+export const signup = body => send('POST', '/api/auth/signup', body)
 export const logout = () => send('POST', '/api/auth/logout', {})
 export const changePassword = (current, next) => send('POST', '/api/auth/password', { current, new: next })
 
@@ -35,6 +37,8 @@ export const admin = {
   setDeadlines: (n, overrides) => send('PUT', `/api/admin/weeks/${n}/deadlines`, { overrides }),
   setPick: (userId, n, body) => send('PATCH', `/api/admin/picks/${userId}/${n}`, body),
   deleteLines: n => call(`/api/admin/weeks/${n}/lines`, { method: 'DELETE' }),
+  signup: () => call('/api/admin/signup'),
+  setSignup: body => send('PUT', '/api/admin/signup', body),
   setAnnouncement: text => send('PUT', '/api/admin/announcement', { text }),
   restore: file => call('/api/admin/restore', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file }),
 }

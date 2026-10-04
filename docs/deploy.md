@@ -1,11 +1,14 @@
 # Accounts & Deployment
 
 ## How accounts work
-- No public sign-up. An admin creates each player in **Admin → Accounts** and sends them their username + temporary
-  password; players can change it from the name menu (top right).
+- Players create their own account from the login page ("Create an account"). In **Admin → Accounts** you can
+  require a **join code** (send it along with the link so strangers can't sign up) or close sign-ups entirely.
+  Admins can also add players by hand and reset passwords.
+- Admins are listed in their own `admins` table (`user_id` → `users.id`); a user is an admin when they have a row
+  there. Promote/demote from **Admin → Accounts**.
 - Admins: post the week's lines (upload the sheet on the Picks tab; saving posts it for everyone), override deadlines,
-  set per-player adjustments/penalties, unlock a player's week past the deadline, manage accounts, post an
-  announcement, and download/restore backups.
+  set per-player adjustments/penalties, unlock a player's week past the deadline, manage accounts and sign-ups,
+  post an announcement, and download/restore backups.
 - Regular players: make and save their own picks, copy the email, see their own stats.
 
 ## Deadlines
