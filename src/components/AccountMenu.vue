@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import { changePassword, logout } from '../api.js'
 
-defineProps({ user: Object })
+defineProps({ user: Object, adminMode: Boolean })
 const emit = defineEmits(['logout'])
 
 const open = ref(false)
@@ -29,7 +29,7 @@ async function doLogout() {
 <template>
   <div class="acct">
     <button class="btn ghost who" @click="open = !open" :aria-expanded="open">
-      {{ user.displayName }}<span v-if="user.isAdmin" class="adm">admin</span> ▾
+      {{ user.displayName }}<span v-if="adminMode" class="adm">admin</span> ▾
     </button>
     <div v-if="open" class="menu">
       <button class="item" @click="pwOpen = !pwOpen">Change password</button>

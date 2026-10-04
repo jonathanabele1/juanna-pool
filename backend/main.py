@@ -53,7 +53,7 @@ def week_deadlines(week: int | None = None, user: dict = Depends(auth.current_us
             return {"week": None, "groups": []}
         groups = deadline_info(week)["groups"]
         if groups and all(deadlines.is_past(g["deadline"]) for g in groups) and week < 18:
-            week += 1  # this week is locked: count down to next week's picks
+            week += 1  # everything this week is due already: count down to next week's picks
     return {"week": week, "groups": deadline_info(week)["groups"]}
 
 
@@ -86,19 +86,9 @@ def put_week(n: int, body: WeekIn, user: dict = Depends(auth.current_user)):
     if not w or not w["games"]:
         raise HTTPException(400, "This week's lines aren't posted yet")
 
-    p = db.get_picks(user["id"], n)
-    stored = p["picks"] if p else {}
-    unlocked = bool(p and p["unlocked"])
     by_key = {db.game_key(g): g for g in posted}
-    info = deadline_info(n, w)
-    picks = {}
-    for g in w["games"]:
-        key = db.game_key(g)
-        if deadlines.is_past(deadlines.deadline_for(g, info)) and not unlocked:
-            if key in stored:
-                picks[key] = stored[key]  # past the deadline: keep what was saved before
-        elif key in by_key:
-            picks[key] = {k: by_key[key][k] for k in db.USER_FIELDS}
+    picks = {key: {k: by_key[key][k] for k in db.USER_FIELDS}
+             for key in (db.game_key(g) for g in w["games"]) if key in by_key}
     if user["isAdmin"]:
         db.save_picks(user["id"], n, picks, body.label, body.adjustment, body.adjNote)
     else:
@@ -108,9 +98,6 @@ def put_week(n: int, body: WeekIn, user: dict = Depends(auth.current_user)):
 
 @app.delete("/api/weeks/{n}")
 def delete_my_picks(n: int, user: dict = Depends(auth.current_user)):
-    p = db.get_picks(user["id"], n)
-    if p and not p["unlocked"] and any(deadlines.is_past(g["deadline"]) for g in deadline_info(n)["groups"]):
-        raise HTTPException(400, "Some of this week's picks are already locked")
     db.delete_picks(user["id"], n)
     return {"ok": True}
 

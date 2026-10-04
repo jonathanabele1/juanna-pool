@@ -31,7 +31,6 @@ class UserPatch(BaseModel):
 class PickPatch(BaseModel):
     adjustment: int = 0
     adjNote: str = ""
-    unlocked: bool = False
 
 
 class Overrides(BaseModel):
@@ -86,7 +85,7 @@ def update_user(user_id: int, body: UserPatch, me: dict = Depends(auth.current_u
 
 @router.get("/weeks/{n}")
 def week_overview(n: int):
-    """Every player's status for the week: saved?, points used, adjustment, unlocked."""
+    """Every player's status for the week: saved?, points used, adjustment."""
     w = db.get_week(n)
     info = deadline_info(n, w)
     lines = w["games"] if w else []
@@ -95,7 +94,7 @@ def week_overview(n: int):
     for u in db.list_users():
         p = picks.get(u["id"])
         row = {"user": u, "saved": has_picks(p), "adjustment": p["adjustment"] if p else 0,
-               "adjNote": p["adjNote"] if p else "", "unlocked": bool(p and p["unlocked"]),
+               "adjNote": p["adjNote"] if p else "",
                "updatedAt": p["updatedAt"] if p else None, "total": None, "picked": 0, "score": None}
         if lines and has_picks(p):
             games = merge(lines, p, info, only_saved=True)
@@ -126,7 +125,7 @@ def set_deadlines(n: int, body: Overrides):
 def set_pick(user_id: int, n: int, body: PickPatch):
     if not db.get_user(user_id):
         raise HTTPException(404, "No such user")
-    db.set_pick_admin(user_id, n, body.adjustment, body.adjNote.strip(), body.unlocked)
+    db.set_pick_admin(user_id, n, body.adjustment, body.adjNote.strip())
     return {"ok": True}
 
 

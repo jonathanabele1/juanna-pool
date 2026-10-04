@@ -16,7 +16,7 @@ DB_PATH = DATA / "pool.db"
 
 USER_FIELDS = ("status", "pick", "points")
 # computed per request, never stored with the lines
-VOLATILE_FIELDS = (*USER_FIELDS, "deadline", "locked", "kept")
+VOLATILE_FIELDS = (*USER_FIELDS, "deadline", "pastDue", "locked", "kept")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -339,11 +339,11 @@ def save_picks(user_id: int, n: int, picks: dict, label: str, adjustment: int | 
                       (adjustment, adj_note or "", user_id, n))
 
 
-def set_pick_admin(user_id: int, n: int, adjustment: int, adj_note: str, unlocked: bool) -> None:
+def set_pick_admin(user_id: int, n: int, adjustment: int, adj_note: str) -> None:
     with conn() as c:
         c.execute("INSERT INTO picks (user_id, week) VALUES (?,?) ON CONFLICT DO NOTHING", (user_id, n))
-        c.execute("UPDATE picks SET adjustment=?, adj_note=?, unlocked=? WHERE user_id=? AND week=?",
-                  (adjustment, adj_note, int(unlocked), user_id, n))
+        c.execute("UPDATE picks SET adjustment=?, adj_note=? WHERE user_id=? AND week=?",
+                  (adjustment, adj_note, user_id, n))
 
 
 def delete_picks(user_id: int, n: int) -> None:

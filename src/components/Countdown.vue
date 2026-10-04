@@ -1,5 +1,5 @@
 <script setup>
-// Countdown to the next pick deadline for the current week (Thursday game, then Sunday/Monday).
+// Countdown to the next pick deadline (Thursday game, then Sunday/Monday). Deadlines are reminders; nothing locks.
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getDeadlines } from '../api.js'
 
@@ -39,11 +39,11 @@ const when = computed(() => next.value && new Date(next.value.deadline).toLocale
 
 <template>
   <p v-if="next" :class="['countdown', { urgent }]">
-    <span>⏱ Week {{ week }} · <b>{{ next.label }}</b> picks lock in</span>
+    <span>⏱ Week {{ week }} · <b>{{ next.label }}</b> picks due in</span>
     <b class="left">{{ left }}</b>
     <small>{{ when }}</small>
   </p>
-  <p v-else-if="groups.length" class="countdown done">🔒 All week {{ week }} picks are locked.</p>
+  <p v-else-if="groups.length" class="countdown done">All week {{ week }} picks are past due.</p>
 </template>
 
 <style scoped>

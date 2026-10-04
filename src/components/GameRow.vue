@@ -74,7 +74,7 @@ const deltaText = d => (d > 0 ? `▲ +${d}` : `▼ ${d}`)
       <span v-if="showDay" class="pill day">{{ dayText }}</span>
       <span v-if="final" class="pill final">Final</span>
       <span v-else-if="started" class="pill started">{{ result?.state === 'in' ? 'Live' : 'Started' }}</span>
-      <span v-else-if="g.locked" class="pill locked" title="Past the pick deadline">🔒 Locked</span>
+      <span v-else-if="g.pastDue && g.status === 'email'" class="pill pastdue" title="Past the pick deadline. You can still change it.">Past due</span>
 
       <span class="spacer"></span>
 
@@ -148,7 +148,7 @@ const deltaText = d => (d > 0 ? `▲ +${d}` : `▼ ${d}`)
 </template>
 
 <style scoped>
-.pill.locked { background: #f1f5f9; color: #475569; }
+.pill.pastdue { background: #fef3c7; color: #92400e; }
 .game { background: #fff; border-radius: 18px; padding: 12px; box-shadow: 0 1px 2px #0000000d, 0 4px 14px #0000000a; transition: opacity .15s; }
 .game.off { opacity: .5; }
 .game.sent:not(.ro) { background: #f8fafc; }

@@ -14,7 +14,7 @@ const emit = defineEmits(['saved'])
 const TARGET = 100
 const saved = (k, d) => { try { return localStorage.getItem(k) ?? d } catch { return d } }
 const norm = s => (s || '').toLowerCase().replace(/[^a-z]/g, '')
-const isLocked = gs => gs.length > 0 && gs.every(g => g.status !== 'email' || g.locked) // everything sent, skipped or past its deadline
+const isLocked = gs => gs.length > 0 && gs.every(g => g.status !== 'email') // everything already sent (or skipped)
 
 const loading = ref(true)
 const imageUrl = ref('')
@@ -41,7 +41,7 @@ const confirmDelete = ref(false)
 const hasSaved = ref(false)
 const savedLocked = ref(false)
 const editMode = ref(true)
-const unlocked = ref(false)     // the admin reopened this week for you past its deadline
+const dueGroups = ref([])       // this week's pick deadlines (reminders only; nothing locks)
 const serverCopy = ref(null)    // last saved version, so "Cancel" can put things back
 const tab = ref('games')        // games | email
 
@@ -93,8 +93,7 @@ function hydrate(w) {
   scored.value = w.score
   savedAt.value = w.updatedAt
   serverCopy.value = w
-  unlocked.value = w.unlocked
-  savedLocked.value = w.picksSaved ? isLocked(w.games) : !w.unlocked && w.games.every(g => g.locked)
+  savedLocked.value = w.picksSaved && isLocked(w.games)
   editMode.value = !savedLocked.value
   imageUrl.value = imageSrc(w)
 }
@@ -112,13 +111,13 @@ onMounted(async () => {
     getTeamCovers(props.week).catch(() => ({})),
   ])
   ats.value = covers
+  dueGroups.value = w?.deadlines || []
   if (w?.hasImage) imageUrl.value = imageSrc(w)
   if (w?.saved) {
     hydrate(w)
     settle(w)
   } else {
-    if (props.isAdmin && events.value.length) scaffold()   // no sheet yet: start from the NFL schedule + DraftKings lines
-    label.value = defaultLabel()
+    label.value = defaultLabel()   // no lines yet: admins upload the sheet (or start from the schedule on purpose)
     snapshot.value = ''
   }
   loading.value = false
@@ -390,7 +389,7 @@ async function save({ markSent = false } = {}) {
     }
     const w = await saveWeek(props.week, payload.value)
     const keepLabel = label.value
-    hydrate(w)                                       // the server keeps locked games as they were
+    hydrate(w)
     label.value = keepLabel
     labelTouched.value = true
     snapshot.value = JSON.stringify(payload.value)
@@ -401,6 +400,15 @@ async function save({ markSent = false } = {}) {
     saving.value = false
   }
 }
+const weekState = computed(() =>
+  !hasSaved.value ? { cls: 'new', text: 'Not saved' }
+    : editMode.value ? { cls: 'editing', text: 'Editing' }
+      : savedLocked.value ? { cls: 'sent', text: '✓ Sent' } : { cls: 'draft', text: 'Draft' })
+const fmtDue = iso => new Date(iso).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })
+const dueChips = computed(() => {
+  const now = Date.now()
+  return dueGroups.value.map(g => ({ id: g.id, label: g.label, when: fmtDue(g.deadline), past: Date.parse(g.deadline) <= now }))
+})
 const savedLabel = computed(() => (savedAt.value ? new Date(savedAt.value.replace(' ', 'T') + 'Z').toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''))
 
 function startEdit() { editMode.value = true; tab.value = 'games' }
@@ -427,7 +435,6 @@ async function clearWeek() {
   } else {
     games.value = []; scored.value = null; serverCopy.value = null; savedAt.value = null
     hasSaved.value = false; savedLocked.value = false; editMode.value = true
-    if (props.isAdmin && events.value.length) scaffold()   // back to the clean schedule
   }
   snapshot.value = ''
   emit('saved')
@@ -447,9 +454,12 @@ const signed = n => (n > 0 ? `+${n}` : `${n}`)
     <!-- no schedule or sheet for this week yet -->
     <section v-if="!games.length" class="emptystate">
       <template v-if="isAdmin">
-        <h3>No games for week {{ week }} yet</h3>
-        <p>The NFL schedule couldn’t be loaded. Upload this week’s spreads image to get started.</p>
-        <button class="btn primary" @click="uploadOpen = true">📷 Upload sheet</button>
+        <h3>No lines for week {{ week }} yet</h3>
+        <p>Upload this week’s spreads sheet. Saving posts the lines for everyone.</p>
+        <div class="es-actions">
+          <button class="btn primary" @click="uploadOpen = true">📷 Upload sheet</button>
+          <button v-if="events.length" class="btn ghost" @click="scaffold" title="Use the NFL schedule with DraftKings lines until the sheet is out">Start from the NFL schedule</button>
+        </div>
       </template>
       <template v-else>
         <h3>Week {{ week }} lines aren’t posted yet</h3>
@@ -457,26 +467,33 @@ const signed = n => (n > 0 ? `+${n}` : `${n}`)
       </template>
     </section>
 
-    <section v-else class="sheetbar">
-      <a v-if="imageUrl" :href="imageUrl" target="_blank" rel="noopener" class="sheetthumb" title="View the uploaded sheet">
-        <img :src="imageUrl" alt="Uploaded spreads" />
-      </a>
-      <div class="sheetinfo">
-        <span class="titleline">
-          <b>Week {{ week }}</b>
-          <span :class="['badge', !hasSaved ? 'new' : editMode ? 'editing' : savedLocked ? 'sent' : 'draft']">
-            {{ !hasSaved ? 'Not saved' : editMode ? 'Editing' : savedLocked ? '✓ Sent' : 'Draft' }}
-          </span>
-        </span>
-        <span v-if="status">{{ status }}</span>
-        <span v-else-if="scheduled && isAdmin">From the NFL schedule · DraftKings lines. Upload the sheet when it’s posted.</span>
-        <span v-else-if="scheduled">DraftKings lines for now · the official sheet isn’t posted yet.</span>
-        <span v-else-if="savedLabel">Saved {{ savedLabel }}</span>
-        <span v-if="unlocked" class="unlockednote">🔓 Reopened by the admin</span>
+    <section v-else class="weekhead">
+      <div class="wh-main">
+        <div class="wh-title">
+          <h2>Week {{ week }}</h2>
+          <span :class="['badge', weekState.cls]">{{ weekState.text }}</span>
+        </div>
+        <ul v-if="dueChips.length" class="wh-due">
+          <li v-for="d in dueChips" :key="d.id" :class="{ past: d.past }">
+            <span class="dl">{{ d.label }}</span> {{ d.past ? 'was due' : 'due' }} <b>{{ d.when }}</b>
+          </li>
+        </ul>
+        <p class="wh-sub">
+          <template v-if="status">{{ status }}</template>
+          <template v-else-if="scheduled && isAdmin">NFL schedule with DraftKings lines. Upload the sheet when it’s posted.</template>
+          <template v-else-if="scheduled">DraftKings lines for now. The official sheet isn’t posted yet.</template>
+          <template v-else-if="savedLabel">Saved {{ savedLabel }}</template>
+          <template v-else>Make your picks, then save.</template>
+        </p>
       </div>
-      <button v-if="editMode && isAdmin" class="btn ghost" @click="uploadOpen = true">📷 {{ imageUrl ? 'Replace sheet' : 'Upload sheet' }}</button>
-      <button v-if="!editMode" class="btn primary" @click="startEdit">✎ Edit picks</button>
-      <button v-else-if="hasSaved" class="btn ghost" @click="cancelEdit">Cancel</button>
+      <div class="wh-actions">
+        <template v-if="isAdmin">
+          <a v-if="imageUrl" :href="imageUrl" target="_blank" rel="noopener" class="btn ghost sm" title="Open the uploaded sheet">🖼 Sheet</a>
+          <button v-if="editMode" class="btn ghost sm" @click="uploadOpen = true">📷 {{ imageUrl ? 'Replace sheet' : 'Upload sheet' }}</button>
+        </template>
+        <button v-if="!editMode" class="btn primary" @click="startEdit">✎ Edit picks</button>
+        <button v-else-if="hasSaved" class="btn ghost" @click="cancelEdit">Cancel</button>
+      </div>
     </section>
 
     <template v-if="games.length">
@@ -589,7 +606,7 @@ const signed = n => (n > 0 ? `+${n}` : `${n}`)
             :result="resultFor(x.i)"
             :ats="ats"
             :editing="fixNames && editMode"
-            :readonly="!editMode || (x.g.locked && !unlocked)"
+            :readonly="!editMode"
             show-day
           />
         </section>
@@ -604,7 +621,7 @@ const signed = n => (n > 0 ? `+${n}` : `${n}`)
             :result="resultFor(x.i)"
             :ats="ats"
             :editing="fixNames && editMode"
-            :readonly="!editMode || (x.g.locked && !unlocked)"
+            :readonly="!editMode"
           />
         </section>
         <p v-if="!visible.length" class="empty">No games match. <button class="link" @click="clearFilters">Clear filters</button></p>

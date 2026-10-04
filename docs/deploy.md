@@ -7,14 +7,19 @@
 - Admins are listed in their own `admins` table (`user_id` → `users.id`); a user is an admin when they have a row
   there. Promote/demote from **Admin → Accounts**.
 - Admins: post the week's lines (upload the sheet on the Picks tab; saving posts it for everyone), override deadlines,
-  set per-player adjustments/penalties, unlock a player's week past the deadline, manage accounts and sign-ups,
+  set per-player adjustments/penalties, manage accounts and sign-ups,
   post an announcement, and download/restore backups.
 - Regular players: make and save their own picks, copy the email, see their own stats.
 
 ## Deadlines
 Worked out from ESPN kickoff times (ET): one hour before the first game of each day. Sunday + Monday games are due
-together at noon Sunday, or earlier if a Sunday game (e.g. London) kicks off before 1 PM. Once a deadline passes the
-server refuses changes to those games. Override any day in **Admin → Week → Pick deadlines**.
+together at noon Sunday, or earlier if a Sunday game (e.g. London) kicks off before 1 PM. They are reminders only:
+the site is for tracking, so picks stay editable after they're due (games still unsent show "Past due"). Change any
+day's time in **Admin → Week → Pick deadlines**.
+
+## Admin mode
+Admins get an **Admin mode** switch next to their name. Turn it off to see and use the site exactly as a regular
+player does (no Admin tab, no sheet upload, no line editing).
 
 ## Running locally
 ```sh

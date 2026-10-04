@@ -23,7 +23,7 @@ async function loadWeek() {
   try {
     const w = await admin.week(week.value)
     wk.value = w
-    rows.value = w.players.map(p => ({ ...p, edit: { adjustment: p.adjustment, adjNote: p.adjNote, unlocked: p.unlocked } }))
+    rows.value = w.players.map(p => ({ ...p, edit: { adjustment: p.adjustment, adjNote: p.adjNote } }))
     for (const g of w.deadlines) dlEdit[g.id] = toInput(g.deadline)
   } catch (e) { wkError.value = e.message }
 }
@@ -160,7 +160,7 @@ onMounted(() => {
         <h4>Players</h4>
         <div class="tablewrap">
           <table>
-            <thead><tr><th>Player</th><th>Picks</th><th>Score</th><th>Adjustment</th><th>Note</th><th title="Let them change picks past the deadline">Unlocked</th><th></th></tr></thead>
+            <thead><tr><th>Player</th><th>Picks</th><th>Score</th><th>Adjustment</th><th>Note</th><th></th></tr></thead>
             <tbody>
               <tr v-for="r in rows" :key="r.user.id" :class="{ inactive: !r.user.active }">
                 <td>{{ r.user.displayName }}</td>
@@ -171,7 +171,6 @@ onMounted(() => {
                 <td>{{ r.score ?? '—' }}</td>
                 <td><input class="num" type="number" v-model.number="r.edit.adjustment" /></td>
                 <td><input class="txt" v-model="r.edit.adjNote" placeholder="e.g. late (−10)" /></td>
-                <td class="c"><input type="checkbox" v-model="r.edit.unlocked" /></td>
                 <td><button class="btn ghost sm" @click="savePlayer(r)">Save</button> <small class="note">{{ notes[`p-${r.user.id}`] }}</small></td>
               </tr>
             </tbody>

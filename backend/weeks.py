@@ -25,18 +25,17 @@ def deadline_info(n: int, w: dict | None = None) -> dict:
 
 
 def merge(lines: list[dict], p: dict | None, info: dict, only_saved: bool = False) -> list[dict]:
-    """Each sheet game with this user's pick. Unsaved games past their deadline count as skipped."""
+    """Each sheet game with this user's pick. Deadlines are reminders only: nothing locks.
+    only_saved: games the user never saved count as skipped (for scoring/stats)."""
     now = datetime.now(timezone.utc)
     stored = (p or {}).get("picks", {})
-    unlocked = bool(p and p["unlocked"])
     out = []
     for g in lines:
         dl = deadlines.deadline_for(g, info)
-        locked = deadlines.is_past(dl, now) and not unlocked
         mine = stored.get(db.game_key(g))
         if mine is None:
-            mine = {"status": "skip"} if locked or only_saved else {}
-        out.append({**g, **DEFAULT_PICK, **mine, "deadline": dl, "locked": locked})
+            mine = {"status": "skip"} if only_saved else {}
+        out.append({**g, **DEFAULT_PICK, **mine, "deadline": dl, "pastDue": deadlines.is_past(dl, now)})
     return out
 
 
@@ -55,7 +54,7 @@ def user_week(user_id: int, n: int) -> dict:
     p = db.get_picks(user_id, n)
     info = deadline_info(n, w)
     base = {"week": n, "hasImage": bool(w and w["hasImage"]), "imageVersion": w["updatedAt"] if w else None,
-            "deadlines": info["groups"], "unlocked": bool(p and p["unlocked"])}
+            "deadlines": info["groups"]}
     if not w or not w["games"]:
         return {**base, "saved": False, "picksSaved": False}
     games = merge(w["games"], p, info)
