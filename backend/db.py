@@ -396,6 +396,21 @@ def kickoffs(week: int) -> dict[str, str]:
             "SELECT event_id, kickoff FROM results WHERE week=? AND kickoff IS NOT NULL", (week,))}
 
 
+def stored_events(week: int, since: str) -> list[dict]:
+    """A week's games as last fetched from ESPN (the schedule doesn't change), in fetch_week's event shape."""
+    with conn() as c:
+        rows = c.execute("""SELECT r.*, h.location AS h_loc, h.name AS h_name, h.logo AS h_logo, h.color AS h_color,
+                                   a.location AS a_loc, a.name AS a_name, a.logo AS a_logo, a.color AS a_color
+                            FROM results r LEFT JOIN teams h ON h.abbr = r.home_abbr LEFT JOIN teams a ON a.abbr = r.away_abbr
+                            WHERE r.week=? AND r.kickoff >= ? ORDER BY r.kickoff""", (week, since)).fetchall()
+    team = lambda r, p: {"abbr": r[f"{'home' if p == 'h' else 'away'}_abbr"], "location": r[f"{p}_loc"] or "",
+                         "name": r[f"{p}_name"] or r[f"{'home' if p == 'h' else 'away'}_abbr"], "logo": r[f"{p}_logo"],
+                         "color": r[f"{p}_color"], "record": None}
+    return [{"id": r["event_id"], "kickoff": r["kickoff"], "state": r["state"], "detail": "",
+             "home": team(r, "h"), "away": team(r, "a"),
+             "scores": {"home": r["home_score"], "away": r["away_score"]}, "line": None} for r in rows]
+
+
 def get_teams() -> dict[str, dict]:
     with conn() as c:
         return {r["abbr"]: dict(r) for r in c.execute("SELECT * FROM teams")}

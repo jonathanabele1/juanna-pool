@@ -104,6 +104,9 @@ def fetch_week(week: int | None = None) -> dict:
         r = httpx.get(ESPN, params=params, timeout=15)
         r.raise_for_status()
     except httpx.HTTPError as exc:
+        stored = db.stored_events(week, f"{SEASON}-09-01") if week else []
+        if stored:  # offline: the schedule and final scores we saved last time
+            return {"week": week, "fetchedAt": int(now * 1000), "events": stored, "offline": True}
         raise HTTPException(502, f"Could not reach ESPN: {exc}")
     j = r.json()
     number = (j.get("week") or {}).get("number") or week
