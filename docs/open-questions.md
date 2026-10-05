@@ -7,7 +7,7 @@ Items the memo leaves unclear. Defaults below are what I'd implement unless told
    permutation. *Assume: repeats allowed, each 2–20, sum = 100.*
 2. **Does the LOY's 50 count toward the 100 total?** *Assume yes* (so other picks sum to 50).
 3. **Does the LOY count as a double-digit pick?** *Assume yes.*
-4. **Pushes**: no rule. *Assume a push earns 0 and counts as neither win nor loss.*
+4. **Pushes**: confirmed: a push earns half the points and counts as neither win nor loss.
 5. **Missing whole weekend**: "a 10 or the lowest weekly score" — meaning unclear. *Assume the
    participant gets the week's lowest score among all participants.* Needs commissioner clarification.
 6. **Missing-game penalty vs. over-100 penalty interplay**: if a game is missing, is the target 80 and

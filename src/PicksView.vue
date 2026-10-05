@@ -4,6 +4,7 @@ import { parseSpreads, parseWeek } from './parse.js'
 import { currentLine, resolveGame } from './lines.js'
 import { getLines, getWeek, saveWeek, deleteWeek, uploadImage, getTeamCovers } from './api.js'
 import GameRow from './components/GameRow.vue'
+import GameTile from './components/GameTile.vue'
 import UploadDialog from './components/UploadDialog.vue'
 import ScheduleList from './components/ScheduleList.vue'
 import { gamesFromEvents } from './schedule.js'
@@ -15,7 +16,6 @@ const emit = defineEmits(['saved', 'scored'])
 const TARGET = 100
 const saved = (k, d) => { try { return localStorage.getItem(k) ?? d } catch { return d } }
 const norm = s => (s || '').toLowerCase().replace(/[^a-z]/g, '')
-const isLocked = gs => gs.length > 0 && gs.every(g => g.status !== 'email') // everything already sent (or skipped)
 
 const loading = ref(true)
 const imageUrl = ref('')
@@ -38,9 +38,8 @@ const saveError = ref('')
 const savedAt = ref(null)
 const confirmDelete = ref(false)
 
-// A week that has already been sent is read-only until you press "Edit picks".
+// A week with saved picks opens read-only until you press "Edit picks".
 const hasSaved = ref(false)
-const savedLocked = ref(false)
 const editMode = ref(true)
 const serverCopy = ref(null)    // last saved version, so "Cancel" can put things back
 const tab = ref('games')        // games | email
@@ -70,7 +69,8 @@ async function refreshLines() {
 }
 
 const nowLines = computed(() => games.value.map(g => currentLine(g, events.value)))
-const changedCount = computed(() => nowLines.value.filter((n, i) => n.changed && games.value[i]?.status !== 'skip').length)
+const changedCount = computed(() => nowLines.value.filter((n, i) => n.changed && games.value[i]?.pick).length)
+const hasStarted = g => { const ev = resolveGame(g, events.value).event; return !!ev && ev.state !== 'pre' }
 const fetchedLabel = computed(() => (fetchedAt.value ? new Date(fetchedAt.value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''))
 const resultFor = i => scored.value?.games?.[i]
 const showLinesbar = computed(() => !!linesError.value || events.value.some(e => e.state !== 'post'))
@@ -91,9 +91,7 @@ const onVisible = () => { if (document.visibilityState === 'visible' && !loading
 
 watch(teamName, v => { try { localStorage.setItem('teamName', v) } catch {} })
 
-const anySent = computed(() => games.value.some(g => g.status === 'sent'))
-watch(anySent, () => { if (!labelTouched.value) label.value = defaultLabel() })
-const defaultLabel = () => `${anySent.value ? 'Rest of week' : 'Week'} ${props.week}.`
+const defaultLabel = () => `${emailLeavesOut.value ? 'Rest of week' : 'Week'} ${props.week}.`
 
 // ---- load saved week ----
 const imageSrc = w => (w.hasImage ? `/api/weeks/${props.week}/image?ts=${encodeURIComponent(w.imageVersion || '')}` : '')
@@ -109,8 +107,7 @@ function hydrate(w) {
   scored.value = w.score
   savedAt.value = w.updatedAt
   serverCopy.value = w
-  savedLocked.value = w.picksSaved && isLocked(w.games)
-  editMode.value = !savedLocked.value
+  editMode.value = !w.picksSaved
   imageUrl.value = imageSrc(w)
 }
 
@@ -155,18 +152,11 @@ function carryOver(old, nu) {
   const abbr = pickedAbbr(old)   // the favorite can differ between the sheet and DraftKings, so match on team
   const r = resolveGame(nu, events.value)
   const pick = abbr && r.favTeam?.abbr === abbr ? 'fav' : abbr && r.dogTeam?.abbr === abbr ? 'dog' : old.pick
-  return { status: old.status, points: old.points, pick, kept: true }
-}
-// mid-week, games that already kicked off were probably sent earlier; for a past week, record everything
-function startedToSent(arr) {
-  const started = arr.map(g => !!currentLine(g, events.value).locked)
-  if (started.some(s => !s)) arr.forEach((g, i) => { if (started[i] && !g.kept) g.status = 'sent' })
+  return { points: old.points, pick: old.pick ? pick : null, kept: true }
 }
 
 function scaffold() {
-  const fresh = gamesFromEvents(events.value)
-  startedToSent(fresh)
-  games.value = fresh
+  games.value = gamesFromEvents(events.value)
   editMode.value = true
 }
 
@@ -189,13 +179,12 @@ async function loadText(text) {
   const parsed = parseSpreads(text).map(g => {
     const base = { ...g, source: 'sheet' }
     const old = prev.get(keyOf(g))
-    return old ? { ...base, ...carryOver(old, g) } : { ...base, status: 'email', pick: 'fav', points: 2 }
+    return old ? { ...base, ...carryOver(old, g) } : { ...base, pick: null, points: 2 }
   })
   if (!parsed.length) {
     status.value = 'No games found. Try a clearer or larger image.'
     return false
   }
-  startedToSent(parsed)
   const kept = parsed.filter(g => g.kept).length
   parsed.forEach(g => delete g.kept)
   games.value = parsed
@@ -282,13 +271,13 @@ const rowInfo = computed(() => games.value.map((g, i) => {
   const teams = [r.favTeam, r.dogTeam].flatMap(t => (t ? [t.location, t.name, t.abbr] : []))
   return {
     g, i, pts,
-    skip: g.status === 'skip',
+    skip: !g.pick,
     outcome: res?.outcome || 'pending',
     live: res?.outcome === 'pending' ? res?.live || null : null,  // covering right now, game still on
     text: [g.fav, g.dog, ...teams].join(' ').toLowerCase(),
     pickHome: g.pick === 'fav' ? r.favHome : !r.favHome,
     moved: Math.abs(now?.delta || 0) + (now?.flipped ? 100 : 0),
-    signed: res?.outcome === 'win' ? pts : res?.outcome === 'loss' ? -pts : 0,
+    signed: res?.outcome === 'win' ? pts : res?.outcome === 'loss' ? -pts : res?.outcome === 'push' ? pts / 2 : 0,
   }
 }))
 
@@ -332,14 +321,22 @@ const groups = computed(() => {
 })
 const activeFilters = computed(() => [fPick.value, fResult.value, fTen.value, fMoved.value].filter(Boolean).length)
 const isFiltered = computed(() => !!query.value.trim() || activeFilters.value > 0)
+
+// ---- list (default) or grid layout; grid is a desktop-only option ----
+const wideMq = window.matchMedia('(min-width: 900px)')
+const wide = ref(wideMq.matches)
+const onWide = e => { wide.value = e.matches }
+onMounted(() => wideMq.addEventListener('change', onWide))
+onUnmounted(() => wideMq.removeEventListener('change', onWide))
+const layout = ref(saved('gamesLayout', 'list'))
+watch(layout, v => { try { localStorage.setItem('gamesLayout', v) } catch {} })
+const gridView = computed(() => wide.value && layout.value === 'grid' && !fixNames.value)
+
 function clearFilters() { query.value = ''; fPick.value = ''; fResult.value = ''; fTen.value = false; fMoved.value = false }
 
 // ---- totals + validation (email + already-sent games make up the week's 100) ----
-const picked = computed(() => games.value.filter(g => g.status !== 'skip'))
-const emailGames = computed(() => games.value.filter(g => g.status === 'email'))
+const picked = computed(() => games.value.filter(g => g.pick))
 const total = computed(() => picked.value.reduce((s, g) => s + (Number(g.points) || 0), 0))
-const sentTotal = computed(() => games.value.filter(g => g.status === 'sent').reduce((s, g) => s + (Number(g.points) || 0), 0))
-const skipped = computed(() => games.value.length - picked.value.length)
 const doubleDigits = computed(() => picked.value.filter(g => Number(g.points) >= 10).length)
 const diff = computed(() => TARGET - total.value)
 const state = computed(() => (total.value === TARGET ? 'good' : total.value > TARGET ? 'bad' : 'warn'))
@@ -350,7 +347,6 @@ const warnings = computed(() => {
   const w = []
   if (total.value > TARGET) w.push(`Over 100 by ${total.value - TARGET}: −${Math.ceil((total.value - TARGET) / 10) * 20} penalty`)
   if (doubleDigits.value === 4) w.push('Exactly 4 double-digit picks: −20 penalty')
-  if (skipped.value) w.push(`${skipped.value} skipped game${skipped.value > 1 ? 's' : ''}: −${skipped.value * 20}`)
   for (const g of picked.value) {
     const p = Number(g.points)
     if (!(Number.isInteger(p) && ((p >= 2 && p <= 20) || p === 50))) w.push(`${pickName(g)}: ${g.points} not allowed (2–20, or 50)`)
@@ -358,12 +354,18 @@ const warnings = computed(() => {
   return w
 })
 
-// ---- email output: raw sheet names, sheet order ----
-const includeSentOverride = ref(null)
-const includeSent = computed(() => includeSentOverride.value ?? emailGames.value.length === 0)
-const outGames = computed(() => games.value.filter(g => g.status === 'email' || (includeSent.value && g.status === 'sent')))
+// ---- email output: your *saved* picks, raw sheet names, sheet order ----
+// Games that already kicked off were emailed earlier (e.g. Thursday), so they're left out unless you ask.
+const savedPicks = computed(() => (serverCopy.value?.picksSaved ? serverCopy.value.games.filter(g => g.pick) : []))
+const startedPicks = computed(() => savedPicks.value.filter(hasStarted))
+const includeStartedOverride = ref(null)
+const includeStarted = computed(() => includeStartedOverride.value ?? startedPicks.value.length === savedPicks.value.length)
+const outGames = computed(() => savedPicks.value.filter(g => includeStarted.value || !hasStarted(g)))
+const emailLeavesOut = computed(() => outGames.value.length < savedPicks.value.length)
+watch(emailLeavesOut, () => { if (!labelTouched.value) label.value = defaultLabel() })
+const startedTotal = computed(() => startedPicks.value.reduce((s, g) => s + (Number(g.points) || 0), 0))
 const output = computed(() => {
-  const head = includeSent.value ? label.value.replace(/^rest of week/i, 'Week') : label.value
+  const head = emailLeavesOut.value ? label.value : label.value.replace(/^rest of week/i, 'Week')
   return [head, `Team name: ${teamName.value}`, '', '', ...outGames.value.map(g => `${pickName(g)} ${g.points}`)].join('\n')
 })
 async function copy() {
@@ -375,7 +377,7 @@ async function copy() {
     document.getElementById('out')?.select()
   }
 }
-function resetPoints() { games.value.forEach(g => { if (g.status === 'email') g.points = 2 }) }
+function resetPoints() { games.value.forEach(g => { g.points = 2 }) }
 
 // ---- saving ----
 const payload = computed(() => ({
@@ -397,8 +399,7 @@ const payload = computed(() => ({
 }))
 const dirty = computed(() => games.value.length > 0 && (JSON.stringify(payload.value) !== snapshot.value || !!pendingFile.value))
 
-async function save({ markSent = false } = {}) {
-  if (markSent) games.value.forEach(g => { if (g.status === 'email') g.status = 'sent' })
+async function save() {
   saving.value = true
   saveError.value = ''
   try {
@@ -420,10 +421,9 @@ async function save({ markSent = false } = {}) {
   }
 }
 const weekState = computed(() =>
-  !hasSaved.value ? { cls: 'new', text: 'Not saved' }
-    : editMode.value ? { cls: 'editing', text: 'Editing' }
-      : savedLocked.value ? { cls: 'sent', text: '✓ Sent' } : { cls: 'draft', text: 'Draft' })
-const OUTCOME_TEXT = { win: 'covered', loss: 'missed', push: 'push', pending: 'not played yet', skipped: 'skipped' }
+  dirty.value ? { cls: 'editing', text: 'Unsaved changes' }
+    : hasSaved.value ? { cls: 'sent', text: '✓ Saved' } : { cls: 'new', text: 'No picks yet' })
+const OUTCOME_TEXT = { win: 'covered', loss: 'missed', push: 'push', pending: 'not played yet', skipped: 'no pick', open: 'no pick yet' }
 const LIVE_TEXT = { win: 'live, covering', loss: 'live, not covering', push: 'live, on the number' }
 const tally = computed(() => {
   const t = { win: 0, loss: 0, push: 0, pending: 0, liveWin: 0, liveLoss: 0 }
@@ -436,7 +436,8 @@ const tally = computed(() => {
   return t
 })
 const segClass = x => (x.skip ? 'skipped' : x.live ? `live-${x.live}` : x.outcome)
-const segText = x => `${pickName(x.g)} ${x.skip ? '(no pick)' : x.pts}: ${x.skip ? 'skipped' : x.live ? LIVE_TEXT[x.live] : OUTCOME_TEXT[x.outcome]}`
+const segText = x => (x.skip ? `${x.g.fav} / ${x.g.dog}: ${OUTCOME_TEXT[x.outcome] || 'no pick'}`
+  : `${pickName(x.g)} ${x.pts}: ${x.live ? LIVE_TEXT[x.live] : OUTCOME_TEXT[x.outcome]}`)
 const savedLabel = computed(() => (savedAt.value ? new Date(savedAt.value.replace(' ', 'T') + 'Z').toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''))
 
 function startEdit() { editMode.value = true; tab.value = 'games' }
@@ -462,7 +463,7 @@ async function clearWeek() {
     hydrate(w)
   } else {
     games.value = []; scored.value = null; serverCopy.value = null; savedAt.value = null
-    hasSaved.value = false; savedLocked.value = false; editMode.value = true
+    hasSaved.value = false; editMode.value = true
   }
   snapshot.value = ''
   emit('saved')
@@ -474,6 +475,10 @@ const penaltyRows = computed(() => {
   return [['Over 100', p.over100], ['Four double-digits', p.fourDoubleDigits], ['Skipped games', p.missingGames]].filter(([, v]) => v)
 })
 const signed = n => (n > 0 ? `+${n}` : `${n}`)
+const adjText = computed(() => [
+  ...penaltyRows.value.map(([n, v]) => `${n} −${v}`),
+  ...(scored.value?.adjustment ? [`Adjustment ${signed(scored.value.adjustment)}${adjNote.value ? ` (${adjNote.value})` : ''}`] : []),
+].join(' · '))
 </script>
 
 <template>
@@ -530,16 +535,10 @@ const signed = n => (n > 0 ? `+${n}` : `${n}`)
             <dt>Max possible</dt><dd>{{ scored.maxScore }}</dd>
             <span class="stat-sub">if every game left covers</span>
           </div>
-          <div class="stat">
-            <dt>Points won</dt><dd>{{ scored.earned }}<small> / {{ scored.wagered }}</small></dd>
-          </div>
-          <div v-if="scored.penaltyTotal" class="stat">
-            <dt>Penalties</dt><dd class="neg">−{{ scored.penaltyTotal }}</dd>
-          </div>
         </dl>
 
         <div class="wh-strip" role="img" :aria-label="`${tally.win} covered, ${tally.loss} missed, ${tally.liveWin + tally.liveLoss} live, ${tally.pending} still to play`">
-          <span v-for="x in rowInfo" :key="x.i" :class="['seg', segClass(x)]" :title="segText(x)"></span>
+          <span v-for="x in rowInfo" :key="x.i" :class="['seg', segClass(x), { loy: x.pts === 50 }]" :title="segText(x)">{{ x.skip ? '' : x.pts }}</span>
         </div>
         <p class="wh-legend">
           <span><i class="dot win"></i>{{ tally.win }} covered</span>
@@ -549,8 +548,7 @@ const signed = n => (n > 0 ? `+${n}` : `${n}`)
           <span v-if="tally.liveLoss"><i class="dot live-loss"></i>{{ tally.liveLoss }} not covering live</span>
           <span v-if="tally.pending"><i class="dot pending"></i>{{ tally.pending }} to play</span>
           <span v-if="penaltyRows.length || scored.adjustment" class="wh-adj">
-            <template v-for="[n, v] in penaltyRows" :key="n">{{ n }} −{{ v }} · </template>
-            <template v-if="scored.adjustment">Adjustment {{ signed(scored.adjustment) }}<template v-if="adjNote"> ({{ adjNote }})</template></template>
+            {{ adjText }}
           </span>
         </p>
       </div>
@@ -619,6 +617,14 @@ const signed = n => (n > 0 ? `+${n}` : `${n}`)
           <button :class="['btn', 'ghost', { active: showFilters || activeFilters }]" @click="showFilters = !showFilters" aria-label="Filters">
             ⚙ Filters <span v-if="activeFilters" class="count">{{ activeFilters }}</span>
           </button>
+          <div v-if="wide" class="layoutswitch" role="group" aria-label="Layout">
+            <button :class="{ on: layout === 'list' }" :aria-pressed="layout === 'list'" title="List" @click="layout = 'list'">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5h12M2 8h12M2 12.5h12" /></svg>
+            </button>
+            <button :class="{ on: layout === 'grid' }" :aria-pressed="layout === 'grid'" title="Grid: every game at once" @click="layout = 'grid'">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1" /><rect x="9" y="2" width="5" height="5" rx="1" /><rect x="2" y="9" width="5" height="5" rx="1" /><rect x="9" y="9" width="5" height="5" rx="1" /></svg>
+            </button>
+          </div>
         </section>
 
         <section v-if="showFilters" class="chips">
@@ -642,7 +648,18 @@ const signed = n => (n > 0 ? `+${n}` : `${n}`)
           <button class="link" @click="clearFilters">Clear filters</button>
         </p>
 
-        <section v-if="flat" class="group">
+        <section v-if="gridView" class="gamegrid">
+          <GameTile
+            v-for="x in visible"
+            :key="x.i"
+            :game="x.g"
+            :events="events"
+            :now="nowLines[x.i]"
+            :result="resultFor(x.i)"
+            :readonly="!editMode"
+          />
+        </section>
+        <section v-else-if="flat" class="group">
           <GameRow
             v-for="x in visible"
             :key="x.i"
@@ -691,18 +708,21 @@ const signed = n => (n > 0 ? `+${n}` : `${n}`)
             <label>Header<input v-model="label" @input="labelTouched = true" /></label>
             <label>Team name<input v-model="teamName" placeholder="Your pool team name" /></label>
           </div>
-          <label class="chk">
-            <input type="checkbox" :checked="includeSent" @change="includeSentOverride = $event.target.checked" />
-            Include games I’ve already sent
-            <small v-if="sentTotal">({{ sentTotal }} pts)</small>
+          <p v-if="dirty" class="unsaved">
+            <span>The email only has your <b>saved</b> picks. Save to include your latest changes.</span>
+            <button class="btn primary sm" :disabled="saving" @click="save()">{{ saving ? 'Saving…' : 'Save' }}</button>
+          </p>
+          <label v-if="startedPicks.length && startedPicks.length < savedPicks.length" class="chk">
+            <input type="checkbox" :checked="includeStarted" @change="includeStartedOverride = $event.target.checked" />
+            Include games that already kicked off
+            <small>({{ startedPicks.length }} game{{ startedPicks.length > 1 ? 's' : '' }}, {{ startedTotal }} pts)</small>
           </label>
-          <textarea id="out" readonly :value="output" :rows="Math.min(24, outGames.length + 5)"></textarea>
-          <p class="hint">Uses the team names exactly as written on the sheet.</p>
-          <button class="btn primary big" @click="copy">{{ copied ? '✓ Copied' : 'Copy for email' }}</button>
-          <div class="savebtns">
-            <button class="btn ghost" :disabled="saving || !dirty" @click="save()">{{ saving ? 'Saving…' : dirty ? 'Save picks' : '✓ Saved' }}</button>
-            <button class="btn ghost" :disabled="saving || !emailGames.length" @click="save({ markSent: true })" title="Saves, and flags the games waiting to be emailed as already sent">Save &amp; mark as sent</button>
-          </div>
+          <template v-if="outGames.length">
+            <textarea id="out" readonly :value="output" :rows="Math.min(24, outGames.length + 5)"></textarea>
+            <p class="hint">Uses the team names exactly as written on the sheet.</p>
+            <button class="btn primary big" @click="copy">{{ copied ? '✓ Copied' : 'Copy for email' }}</button>
+          </template>
+          <p v-else class="hint">No saved picks yet. Tap a team on the Games tab, then save.</p>
           <p v-if="saveError" class="err">{{ saveError }}</p>
         </div>
       </section>
@@ -717,7 +737,7 @@ const signed = n => (n > 0 ? `+${n}` : `${n}`)
             <template v-else-if="diff > 0">{{ diff }} to go</template>
             <template v-else>{{ -diff }} over</template>
           </span>
-          <span class="dd">{{ doubleDigits }} double-digit<template v-if="sentTotal"> · {{ sentTotal }} sent</template></span>
+          <span class="dd">{{ picked.length }} of {{ games.length }} picked · {{ doubleDigits }} double-digit</span>
           <button v-if="tab !== 'email'" class="btn ghost" @click="tab = 'email'">✉ Email</button>
           <button :class="['btn', dirty ? 'primary' : 'ghost']" :disabled="saving || !dirty" @click="save()">{{ saving ? '…' : dirty ? 'Save' : 'Saved ✓' }}</button>
         </div>

@@ -98,7 +98,7 @@ def week_overview(n: int):
                "updatedAt": p["updatedAt"] if p else None, "total": None, "picked": 0, "score": None}
         if lines and has_picks(p):
             games = merge(lines, p, info, only_saved=True)
-            chosen = [g for g in games if g["status"] != "skip"]
+            chosen = [g for g in games if g.get("pick")]
             s = scored(n, games, p["adjustment"])
             row.update(total=sum(int(g["points"]) for g in chosen), picked=len(chosen),
                        score=s["score"] if s["wins"] + s["losses"] + s["pushes"] else None)

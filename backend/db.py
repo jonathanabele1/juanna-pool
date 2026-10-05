@@ -1,7 +1,7 @@
 """SQLite persistence. One file: $POOL_DATA_DIR/pool.db (default backend/data/pool.db).
 
 weeks  = the week's lines (one copy, admin-owned) + the sheet image + deadline overrides
-picks  = each user's pick/points/status per game, keyed by game (see game_key)
+picks  = each user's pick/points per game, keyed by game (see game_key)
 """
 import json
 import os
@@ -14,7 +14,8 @@ DATA = Path(os.environ.get("POOL_DATA_DIR") or Path(__file__).parent / "data")
 DATA.mkdir(parents=True, exist_ok=True)
 DB_PATH = DATA / "pool.db"
 
-USER_FIELDS = ("status", "pick", "points")
+USER_FIELDS = ("status", "pick", "points")  # "status" (email/sent/skip) is legacy: read, never written
+PICK_FIELDS = ("pick", "points")
 # computed per request, never stored with the lines
 VOLATILE_FIELDS = (*USER_FIELDS, "deadline", "pastDue", "locked", "kept")
 

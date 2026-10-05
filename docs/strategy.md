@@ -21,7 +21,7 @@ A look at the math behind the pool's scoring rules ([picks-and-scoring.md](picks
    more when the move crosses 3 or 7.
 4. **Watch out for the "exactly 4 double digits" rule.** It hits the most natural maximum-concentration
    allocation in most weeks (for example 20/20/20/16). Use 20-20-20-9-9 or 20-20-18-10-10 instead.
-5. **Avoid big points on whole-number spreads (−3, −7).** A push scores 0, the same as a loss.
+5. **Whole-number spreads (−3, −7) can push.** A push earns half the points, so it costs you half a win.
 6. Your current style (three 20s with the rest near the minimum) is already close to optimal. The
    improvements are: choose the 20s by line movement, avoid pushable numbers, and use the LOY on purpose.
 
@@ -32,7 +32,7 @@ A look at the math behind the pool's scoring rules ([picks-and-scoring.md](picks
 For a week with *n* games, you pick a side and a point value `pᵢ` for each game:
 
 ```
-score = Σ pᵢ · Xᵢ        Xᵢ = 1 if your side covers, 0 otherwise (push = 0)
+score = Σ pᵢ · Xᵢ        Xᵢ = 1 if your side covers, ½ on a push, 0 otherwise
 subject to   2 ≤ pᵢ ≤ 20 (or one 50 per season),   Σ pᵢ = 100,   #{pᵢ ≥ 10} ≠ 4
 ```
 

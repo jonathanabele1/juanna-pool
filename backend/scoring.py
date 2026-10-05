@@ -1,10 +1,15 @@
 """Pool scoring: pick the side that covers the *sheet* spread; earn the points if it covers.
 
-weekly score = points on covered picks - penalties + manual adjustment (late penalties, etc.)
+weekly score = points on covered picks + half points on pushes - penalties + manual adjustment (late penalties, etc.)
 """
 from collections import defaultdict
 
 LOY = 50
+
+
+def push_points(pts: int) -> int | float:
+    """A push earns half the points (2.5 for a 5)."""
+    return pts // 2 if pts % 2 == 0 else pts / 2
 
 
 def _penalties(picked: list[dict], skipped: int) -> dict:
@@ -36,12 +41,17 @@ def _result(g: dict, results: dict) -> dict | None:
 
 
 def score_week(week: dict, results: dict) -> dict:
-    picked, per_game, skipped = [], [], 0
+    picked, per_game, skipped, open_ = [], [], 0, 0
     for g in week["games"]:
-        status = g.get("status", "email")
-        if status == "skip":
-            skipped += 1
-            per_game.append({"outcome": "skipped"})
+        if not g.get("pick"):
+            # no pick: a skip (−20) once the game kicks off, until then still open
+            res = results.get(str(g.get("eventId") or ""))
+            if res and res["state"] in ("in", "post"):
+                skipped += 1
+                per_game.append({"outcome": "skipped"})
+            else:
+                open_ += 1
+                per_game.append({"outcome": "open"})
             continue
         pts = int(g.get("points") or 0)
         entry = {"outcome": "pending", "earned": 0, "state": None, "favScore": None, "dogScore": None}
@@ -52,6 +62,7 @@ def score_week(week: dict, results: dict) -> dict:
                 entry["margin"] = r["margin"]
                 if r["margin"] == 0:
                     entry["outcome"] = "push"
+                    entry["earned"] = push_points(pts)
                 else:
                     won = (r["margin"] > 0) == (g.get("pick") == "fav")
                     entry["outcome"] = "win" if won else "loss"
@@ -70,7 +81,8 @@ def score_week(week: dict, results: dict) -> dict:
     adjustment = int(week.get("adjustment") or 0)
     score = earned - sum(pen.values()) + adjustment
     live = lambda o: sum(1 for g in picked if g.get("live") == o)
-    live_pts = sum(g["points"] for g in picked if g.get("live") == "win")
+    live_pts = (sum(g["points"] for g in picked if g.get("live") == "win")
+                + sum(push_points(g["points"]) for g in picked if g.get("live") == "push"))
     return {
         "games": per_game,
         "earned": earned,
@@ -85,7 +97,8 @@ def score_week(week: dict, results: dict) -> dict:
         "live": {"wins": live("win"), "losses": live("loss"), "pushes": live("push"), "points": live_pts},
         "ifEndedNow": score + live_pts,
         "maxScore": score + sum(g["points"] for g in picked if g["outcome"] == "pending"),
-        "complete": bool(picked) and count("pending") == 0,
+        "open": open_,
+        "complete": bool(picked) and count("pending") == 0 and open_ == 0,
         "_picked": picked,
     }
 
@@ -173,7 +186,7 @@ def team_stats(weeks: list[dict], results: dict, teams: dict, before_week: int |
                 _tally(t["ats"], outcome)
                 _tally(t[role], outcome)
                 t["su"]["w" if mine > theirs else "l" if mine < theirs else "t"] += 1
-            if g.get("status") == "skip":
+            if not g.get("pick"):
                 continue
             pts = int(g.get("points") or 0)
             picked, other = (fav_a, dog_a) if g.get("pick") == "fav" else (dog_a, fav_a)

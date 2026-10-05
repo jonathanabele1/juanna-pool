@@ -46,9 +46,9 @@ Picks are submitted in the order the games appear on the odds site.
 
 ## Weekly score
 ```
-weekly_score = Σ(points of picks that covered)  −  penalties
+weekly_score = Σ(points of picks that covered)  +  ½ · Σ(points of picks that pushed)  −  penalties
 ```
-Pushes: not addressed in the memo (see open questions).
+Pushes earn half the points. Not in the memo; confirmed with the pool (see open questions).
 
 ## Weekly record vs spread
 Count of correct picks vs incorrect picks for the week; used as the **only** weekly tiebreaker.

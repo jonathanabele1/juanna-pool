@@ -22,8 +22,7 @@ MAX_IMAGE = 10 * 1024 * 1024
 class Game(BaseModel, extra="allow"):
     fav: str
     dog: str
-    status: Literal["email", "sent", "skip"] = "email"
-    pick: Literal["fav", "dog"] = "fav"
+    pick: Literal["fav", "dog"] | None = None  # None: no pick (yet)
     points: int = 2
 
 
@@ -88,8 +87,8 @@ def put_week(n: int, body: WeekIn, user: dict = Depends(auth.current_user)):
         raise HTTPException(400, "This week's lines aren't posted yet")
 
     by_key = {db.game_key(g): g for g in posted}
-    picks = {key: {k: by_key[key][k] for k in db.USER_FIELDS}
-             for key in (db.game_key(g) for g in w["games"]) if key in by_key}
+    picks = {key: {k: by_key[key][k] for k in db.PICK_FIELDS}
+             for key in (db.game_key(g) for g in w["games"]) if key in by_key and by_key[key].get("pick")}
     if user["isAdmin"]:
         db.save_picks(user["id"], n, picks, body.label, body.adjustment, body.adjNote)
     else:

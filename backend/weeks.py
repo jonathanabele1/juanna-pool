@@ -5,7 +5,17 @@ from fastapi import HTTPException
 
 from . import db, deadlines, espn, scoring
 
-DEFAULT_PICK = {"status": "email", "pick": "fav", "points": 2}
+DEFAULT_PICK = {"pick": None, "points": 2}
+
+
+def _mine(saved: dict | None) -> dict:
+    """A stored pick. Older saves carry a status: "skip" meant no pick; "email"/"sent" were both real picks."""
+    if not saved:
+        return {}
+    out = {k: v for k, v in saved.items() if k != "status"}
+    if saved.get("status") == "skip":
+        out["pick"] = None
+    return out
 
 
 def results_for(week: int) -> dict:
@@ -26,15 +36,13 @@ def deadline_info(n: int, w: dict | None = None) -> dict:
 
 def merge(lines: list[dict], p: dict | None, info: dict, only_saved: bool = False) -> list[dict]:
     """Each sheet game with this user's pick. Deadlines are reminders only: nothing locks.
-    only_saved: games the user never saved count as skipped (for scoring/stats)."""
+    Games without a pick have pick=None (scoring counts them as skipped once they kick off)."""
     now = datetime.now(timezone.utc)
     stored = (p or {}).get("picks", {})
     out = []
     for g in lines:
         dl = deadlines.deadline_for(g, info)
-        mine = stored.get(db.game_key(g))
-        if mine is None:
-            mine = {"status": "skip"} if only_saved else {}
+        mine = _mine(stored.get(db.game_key(g)))
         out.append({**g, **DEFAULT_PICK, **mine, "deadline": dl, "pastDue": deadlines.is_past(dl, now)})
     return out
 

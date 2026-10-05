@@ -10,12 +10,6 @@ const props = defineProps({
   showDay: Boolean,   // flat (sorted) lists don't have day headings, so show the day on the card
 })
 
-const STATUSES = [
-  { v: 'email', t: 'Email', hint: 'Include in the email you are about to send' },
-  { v: 'sent', t: 'Sent', hint: 'Already sent earlier (e.g. Thursday). Counts toward the 100.' },
-  { v: 'skip', t: 'Skip', hint: 'No pick (−20)' },
-]
-const STATUS_LABEL = { email: 'To email', sent: 'Sent', skip: 'Skipped' }
 const DAY_NAMES = { Thurs: 'Thu', Tues: 'Tue', Wed: 'Wed', Fri: 'Fri', Sat: 'Sat', Sun: 'Sun', Mon: 'Mon' }
 
 const r = computed(() => resolveGame(props.game, props.events))
@@ -29,11 +23,6 @@ const sides = computed(() => {
 })
 
 const noLine = computed(() => g.value.source === 'schedule' && g.value.hasLine === false)
-const lineText = computed(() => {
-  if (noLine.value) return 'No line yet'
-  const fav = r.value.favTeam?.abbr || g.value.fav.toUpperCase()
-  return g.value.spread ? `${fav} −${g.value.spread}` : 'PK'
-})
 const dayText = computed(() => `${DAY_NAMES[g.value.day] || g.value.day}${g.value.time ? ` · ${g.value.time}` : ''}`)
 const ev = computed(() => r.value.event)
 const gameState = computed(() => ev.value?.state || props.result?.state)
@@ -59,9 +48,9 @@ const leader = computed(() => {
 })
 
 // your side against the sheet spread, right now
-const cover = computed(() => (g.value.status === 'skip' ? null : coverNow(g.value, props.events)))
+const cover = computed(() => (g.value.pick ? coverNow(g.value, props.events) : null))
 const outcome = computed(() => {
-  if (!final.value || g.value.status === 'skip') return null
+  if (!final.value || !g.value.pick) return null
   const o = props.result?.outcome
   return ['win', 'loss', 'push'].includes(o) ? o : cover.value?.status || null
 })
@@ -82,6 +71,8 @@ const clockText = computed(() => {
 const finalText = computed(() => (/OT/.test(ev.value?.detail || '') ? 'Final · OT' : 'Final'))
 const sideAbbr = key => (key === 'fav' ? r.value.favTeam : r.value.dogTeam)?.abbr
 const pickedName = computed(() => (g.value.pick === 'fav' ? r.value.favTeam : r.value.dogTeam)?.name || g.value[g.value.pick])
+// tap a team to pick it, tap it again to clear the pick
+function choose(key) { g.value.pick = g.value.pick === key ? null : key }
 
 const pts = computed({
   get: () => g.value.points,
@@ -97,21 +88,8 @@ const deltaText = d => (d > 0 ? `▲ +${d}` : `▼ ${d}`)
 </script>
 
 <template>
-  <article :class="['game', { off: g.status === 'skip', sent: g.status === 'sent', ro: readonly, live, final }, outcome && `is-${outcome}`, liveStatus && `live-${liveStatus}`]">
+  <article :class="['game', { nopick: !g.pick, ro: readonly, live, final }, outcome && `is-${outcome}`, liveStatus && `live-${liveStatus}`]">
     <header class="meta">
-      <div v-if="!readonly" class="seg" role="radiogroup" aria-label="Pick status">
-        <button
-          v-for="o in STATUSES"
-          :key="o.v"
-          role="radio"
-          :aria-checked="g.status === o.v"
-          :class="[o.v, { on: g.status === o.v }]"
-          :title="o.hint"
-          @click="g.status = o.v"
-        >{{ o.t }}</button>
-      </div>
-      <span v-else :class="['pill', 'st', g.status]">{{ STATUS_LABEL[g.status] }}</span>
-
       <span v-if="showDay" class="pill day">{{ dayText }}</span>
       <span v-if="final" class="pill final">{{ finalText }}</span>
       <template v-else-if="live">
@@ -119,18 +97,18 @@ const deltaText = d => (d > 0 ? `▲ +${d}` : `▼ ${d}`)
         <span v-if="clockText" class="pill clock">{{ clockText }}</span>
       </template>
       <span v-else-if="started" class="pill started">Started</span>
-      <span v-else-if="g.pastDue && g.status === 'email'" class="pill pastdue" title="Past the pick deadline. You can still change it.">Past due</span>
+      <span v-else-if="g.pastDue && !g.pick" class="pill pastdue" title="Past the pick deadline. You can still change it.">Past due</span>
 
       <span class="spacer"></span>
 
-      <span class="pill line" title="Spread from your sheet">{{ lineText }}</span>
       <span v-if="final && outcome" :class="['pill', 'res', outcome]">
         {{ outcome === 'win' ? 'Covered' : outcome === 'loss' ? 'Missed' : 'Push' }}
-        <b>{{ outcome === 'win' ? `+${result?.earned ?? g.points}` : outcome === 'loss' ? `0 of ${g.points}` : '0' }}</b>
+        <b>{{ outcome === 'win' ? `+${result?.earned ?? g.points}` : outcome === 'loss' ? `0 of ${g.points}` : `+${num(result?.earned ?? g.points / 2)}` }}</b>
       </span>
       <span v-else-if="live && cover" :class="['pill', 'cov', cover.status]" title="Your pick against the sheet spread, if it ended now">
         {{ coverText }}
         <b v-if="cover.status === 'win'">+{{ g.points }}</b>
+        <b v-else-if="cover.status === 'push'">+{{ num(g.points / 2) }}</b>
       </span>
       <span
         v-else-if="!live && !final"
@@ -153,7 +131,7 @@ const deltaText = d => (d > 0 ? `▲ +${d}` : `▼ ${d}`)
         :home="s.home"
         :spread="g.spread"
         :selected="g.pick === s.key"
-        :dimmed="g.pick !== s.key"
+        :dimmed="!!g.pick && g.pick !== s.key"
         :editing="editing"
         :readonly="readonly"
         :no-line="noLine"
@@ -163,7 +141,7 @@ const deltaText = d => (d > 0 ? `▲ +${d}` : `▼ ${d}`)
         :live="g.pick === s.key ? liveStatus : null"
         :possession="live && !!info?.possession && info.possession === sideAbbr(s.key)"
         :trailing="!!leader && leader !== s.key"
-        @select="g.pick = s.key"
+        @select="choose(s.key)"
         @update:raw="g[s.key] = $event"
         :style="{ gridColumn: i === 0 ? 1 : 3 }"
       />
@@ -180,27 +158,28 @@ const deltaText = d => (d > 0 ? `▲ +${d}` : `▼ ${d}`)
 
     <footer v-if="!readonly" class="foot">
       <span class="picked">
-        Picking <b>{{ pickedName }}</b>
+        <template v-if="g.pick">Picking <b>{{ pickedName }}</b></template>
+        <template v-else>Tap a team to pick it</template>
         <small v-if="editing">
           · <button class="link" @click="g.favHome = !r.favHome">swap home/away</button>
         </small>
       </span>
       <span class="spacer"></span>
-      <button class="loy" :class="{ on: isLoy }" @click="toggleLoy" title="Lock of the Year (50 points, once a season)">★ LOY</button>
-      <div class="stepper">
-        <button aria-label="Decrease points" @click="bump(-1)">−</button>
-        <input type="number" inputmode="numeric" min="2" max="50" v-model.number="pts" @focus="$event.target.select()" aria-label="Points" />
-        <button aria-label="Increase points" @click="bump(1)">+</button>
+      <button class="loy" :class="{ on: isLoy }" :disabled="!g.pick" @click="toggleLoy" title="Lock of the Year (50 points, once a season)">★ LOY</button>
+      <div :class="['stepper', { off: !g.pick }]" :title="g.pick ? '' : 'Pick a team first'">
+        <button aria-label="Decrease points" :disabled="!g.pick" @click="bump(-1)">−</button>
+        <input type="number" inputmode="numeric" min="2" max="50" v-model.number="pts" :disabled="!g.pick" @focus="$event.target.select()" aria-label="Points" />
+        <button aria-label="Increase points" :disabled="!g.pick" @click="bump(1)">+</button>
       </div>
     </footer>
 
     <footer v-else class="foot ro">
       <span class="picked">
-        <template v-if="g.status === 'skip'">No pick</template>
+        <template v-if="!g.pick">No pick</template>
         <template v-else>Picked <b>{{ pickedName }}</b></template>
       </span>
       <span class="spacer"></span>
-      <span v-if="g.status !== 'skip'" :class="['ptsbadge', { loy: isLoy }]">
+      <span v-if="g.pick" :class="['ptsbadge', { loy: isLoy }]">
         <template v-if="isLoy">★ Lock · </template>{{ g.points }} pts
       </span>
     </footer>
@@ -210,33 +189,17 @@ const deltaText = d => (d > 0 ? `▲ +${d}` : `▼ ${d}`)
 <style scoped>
 .pill.pastdue { background: #fef3c7; color: #92400e; }
 .game { background: #fff; border-radius: 18px; padding: 12px; box-shadow: 0 1px 2px #0000000d, 0 4px 14px #0000000a; transition: opacity .15s; }
-.game.off { opacity: .5; }
-.game.sent:not(.ro) { background: #f8fafc; }
+.game.nopick.ro { opacity: .6; }
+.stepper.off, .loy:disabled { opacity: .45; }
+.stepper.off button, .loy:disabled { cursor: not-allowed; }
 
 .meta { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
 .spacer { flex: 1; }
 
-/* Email / Sent / Skip: equal-width segments on a soft track, active one lifts as a white chip */
-.seg { display: inline-grid; grid-template-columns: repeat(3, 1fr); gap: 2px; padding: 3px; background: #eef1f5; border-radius: 11px; }
-.seg button {
-  min-width: 62px; padding: 6px 12px; border: 0; border-radius: 8px; background: transparent;
-  font-size: .76rem; font-weight: 700; line-height: 1; color: #64748b; text-align: center; cursor: pointer;
-  transition: background .12s, color .12s, box-shadow .12s;
-}
-.seg button:hover:not(.on) { color: #0f172a; background: #ffffff80; }
-.seg button.on { background: #fff; box-shadow: 0 1px 3px #0000002e; }
-.seg button.on.email { color: #1d4ed8; }
-.seg button.on.sent { color: #334155; }
-.seg button.on.skip { color: #b91c1c; }
-.seg button:focus-visible { outline: 2px solid #93c5fd; outline-offset: 1px; }
 
 .pill { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; font-size: .72rem; font-weight: 700; border-radius: 999px; background: #f1f5f9; color: #475569; white-space: nowrap; }
 .pill b { margin-left: 5px; }
-.pill.st.email { background: #dbeafe; color: #1d4ed8; }
-.pill.st.sent { background: #f1f5f9; color: #475569; }
-.pill.st.skip { background: #fee2e2; color: #991b1b; }
 .pill.day { background: #fff; box-shadow: inset 0 0 0 1px #e2e8f0; }
-.pill.line { background: #0f172a; color: #fff; }
 .pill.final { background: #0f172a; color: #fff; letter-spacing: .04em; text-transform: uppercase; }
 .pill.live { background: #dc2626; color: #fff; letter-spacing: .06em; text-transform: uppercase; gap: 6px; }
 .pill.clock { background: #fef2f2; color: #991b1b; font-variant-numeric: tabular-nums; }
@@ -291,6 +254,5 @@ const deltaText = d => (d > 0 ? `▲ +${d}` : `▼ ${d}`)
   .matchup { grid-template-columns: 1fr; gap: 6px; }
   .matchup > :deep(.team) { grid-column: 1 !important; }
   .at { display: none; }
-  .seg { width: 100%; }
 }
 </style>

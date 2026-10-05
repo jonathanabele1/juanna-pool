@@ -35,8 +35,7 @@ export function gamesFromEvents(events) {
         dogAbbr: dogTeam.abbr,
         hasLine: !!ev.line,
         source: 'schedule',
-        status: 'email',
-        pick: 'fav',
+        pick: null,
         points: 2,
       }
     })
