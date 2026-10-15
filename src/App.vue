@@ -47,7 +47,7 @@ async function start() {
   } catch { /* handled inside the picks view */ }
   week.value = week.value || Number(params.get('week')) || currentWeek.value || 1
   refreshSummaries()
-  getPlayers().then(p => (players.value = p)).catch(() => {})
+  refreshPlayers()
   getAnnouncement().then(a => (announcement.value = a.text)).catch(() => {})
 }
 
@@ -56,6 +56,15 @@ function onLogin(u) {
   start()
 }
 const onLoggedOut = () => { user.value = null }
+
+// reloaded whenever a tab that lists players opens, so hiding/deleting an account shows up right away
+async function refreshPlayers() {
+  try { players.value = await getPlayers() } catch { return }
+  const ids = new Set(players.value.map(p => p.id))
+  if (statsPlayer.value && !ids.has(statsPlayer.value)) statsPlayer.value = null   // back to you
+  if (viewing.value && !ids.has(viewing.value)) viewing.value = null              // back to the league table
+}
+watch(tab, t => { if (user.value && (t === 'stats' || t === 'league')) refreshPlayers() })
 
 function openTab(t) {
   if (t === 'league' && tab.value === 'league') viewing.value = null  // tapping the tab again goes back to the table

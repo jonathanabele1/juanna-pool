@@ -4,6 +4,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { getLines, getPlayerWeek, getPlayerWeeks, getPool } from './api.js'
 import { gameKey, poolByKey } from './pool.js'
+import { groupByKickoff } from './schedule.js'
 import WeekBar from './components/WeekBar.vue'
 import GameRow from './components/GameRow.vue'
 import PlayerPicker from './components/PlayerPicker.vue'
@@ -56,17 +57,7 @@ watch(week, () => loadWeek())
 
 const games = computed(() => w.value?.games || [])
 const score = computed(() => w.value?.score || null)
-const groups = computed(() => {
-  const out = []
-  games.value.forEach((g, i) => {
-    const key = `${g.day}|${g.time}`
-    let grp = out.find(o => o.key === key)
-    if (!grp) out.push((grp = { key, day: g.day, time: g.time, items: [] }))
-    grp.items.push({ g, i })
-  })
-  return out
-})
-const DAY_NAMES = { Thurs: 'Thursday', Tues: 'Tuesday', Wed: 'Wednesday', Fri: 'Friday', Sat: 'Saturday', Sun: 'Sunday', Mon: 'Monday' }
+const groups = computed(() => groupByKickoff(games.value.map((g, i) => ({ g, i })), events.value))
 const liveRec = computed(() => score.value?.live || { wins: 0, losses: 0, pushes: 0 })
 const liveGames = computed(() => liveRec.value.wins + liveRec.value.losses + liveRec.value.pushes)
 const hasResults = computed(() => !!score.value && score.value.wins + score.value.losses + score.value.pushes + liveGames.value > 0)
@@ -128,7 +119,7 @@ const resultFor = i => (score.value?.games?.[i]?.outcome === 'hidden' ? null : s
 
         <template v-if="w.picksSaved">
           <section v-for="grp in groups" :key="grp.key" class="group">
-            <h2>{{ DAY_NAMES[grp.day] || grp.day }} <small v-if="grp.time">{{ grp.time }}</small></h2>
+            <h2>{{ grp.day }} <small v-if="grp.when">{{ grp.when }}</small></h2>
             <GameRow
               v-for="x in grp.items"
               :key="x.i"

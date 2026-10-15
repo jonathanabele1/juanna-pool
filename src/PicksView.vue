@@ -8,7 +8,7 @@ import GameRow from './components/GameRow.vue'
 import GameTile from './components/GameTile.vue'
 import UploadDialog from './components/UploadDialog.vue'
 import ScheduleList from './components/ScheduleList.vue'
-import { gamesFromEvents } from './schedule.js'
+import { gamesFromEvents, groupByKickoff } from './schedule.js'
 import { SAMPLE } from './sample.js'
 
 const props = defineProps({ week: Number, currentWeek: Number, isAdmin: Boolean })
@@ -245,10 +245,7 @@ const onPaste = e => {
 onMounted(() => window.addEventListener('paste', onPaste))
 onUnmounted(() => window.removeEventListener('paste', onPaste))
 
-// ---- search / sort / filter (default = sheet order, grouped by day) ----
-const DAY_NAMES = { Thurs: 'Thursday', Tues: 'Tuesday', Wed: 'Wednesday', Fri: 'Friday', Sat: 'Saturday', Sun: 'Sunday', Mon: 'Monday' }
-const groupTitle = grp => DAY_NAMES[grp.day] || grp.day
-
+// ---- search / sort / filter (default = kickoff order, grouped by kickoff slot) ----
 const query = ref('')
 const sortKey = ref('time')
 const showFilters = ref(false)
@@ -272,6 +269,8 @@ const SORTS = {
 const liveRec = computed(() => scored.value?.live || { wins: 0, losses: 0, pushes: 0, points: 0 })
 const liveGames = computed(() => liveRec.value.wins + liveRec.value.losses + liveRec.value.pushes)
 const hasResults = computed(() => !!scored.value && scored.value.wins + scored.value.losses + scored.value.pushes + liveGames.value > 0)
+// the week card always shows; before anything's scored (or saved) it's 0 and 0–0
+const card = computed(() => scored.value || { score: 0, wins: 0, losses: 0, pushes: 0, pending: 0, adjustment: 0 })
 const sortOptions = computed(() => [
   ['time', 'Kickoff order'],
   ['ptsDesc', 'Points: high → low'],
@@ -328,16 +327,8 @@ const visible = computed(() => {
   return rows
 })
 const flat = computed(() => sortKey.value !== 'time')
-const groups = computed(() => {
-  const out = []
-  for (const x of visible.value) {
-    const key = `${x.g.day}|${x.g.time}`
-    let grp = out.find(o => o.key === key)
-    if (!grp) out.push((grp = { key, day: x.g.day, time: x.g.time, items: [] }))
-    grp.items.push(x)
-  }
-  return out
-})
+// kickoff order: grouped by kickoff slot (Sunday 1:00 PM, Sunday 4:05 / 4:25 PM, ...)
+const groups = computed(() => groupByKickoff(visible.value, events.value))
 const activeFilters = computed(() => [fPick.value, fResult.value, fTen.value, fMoved.value].filter(Boolean).length)
 const isFiltered = computed(() => !!query.value.trim() || activeFilters.value > 0)
 
@@ -454,7 +445,8 @@ const tally = computed(() => {
   }
   return t
 })
-const segClass = x => (x.skip ? 'skipped' : x.live ? `live-${x.live}` : x.outcome)
+// no pick: a −20 skip once the game kicks off, until then just an open slot
+const segClass = x => (x.skip ? (x.outcome === 'skipped' ? 'skipped' : 'open') : x.live ? `live-${x.live}` : x.outcome)
 const segText = x => (x.skip ? `${x.g.fav} / ${x.g.dog}: ${OUTCOME_TEXT[x.outcome] || 'no pick'}`
   : `${pickName(x.g)} ${x.pts}: ${x.live ? LIVE_TEXT[x.live] : OUTCOME_TEXT[x.outcome]}`)
 const savedLabel = computed(() => (savedAt.value ? new Date(savedAt.value.replace(' ', 'T') + 'Z').toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''))
@@ -536,37 +528,46 @@ const adjText = computed(() => [
         </div>
       </div>
 
-      <div v-if="games.length && hasResults" class="wh-results">
+      <div v-if="games.length" class="wh-results">
         <dl class="wh-stats">
-          <div :class="['stat', 'score', scored.score > 0 ? 'pos' : scored.score < 0 ? 'neg' : '']">
-            <dt>Score</dt><dd>{{ scored.score }}</dd>
+          <div :class="['stat', 'score', card.score > 0 ? 'pos' : card.score < 0 ? 'neg' : '']">
+            <dt>Score</dt><dd>{{ card.score }}</dd>
             <span v-if="liveGames" class="stat-live" title="Your score if every game on now ended as it stands">
               <i class="ldot"></i>Live {{ scored.ifEndedNow }}
             </span>
           </div>
           <div class="stat">
-            <dt>Record</dt><dd>{{ scored.wins }}–{{ scored.losses }}<template v-if="scored.pushes">–{{ scored.pushes }}</template></dd>
+            <dt>Record</dt><dd>{{ card.wins }}–{{ card.losses }}<template v-if="card.pushes">–{{ card.pushes }}</template></dd>
             <span v-if="liveGames" class="stat-live" title="Games in progress: covering – not covering (– on the number)">
               <i class="ldot"></i>Live {{ liveRec.wins }}–{{ liveRec.losses }}<template v-if="liveRec.pushes">–{{ liveRec.pushes }}</template>
             </span>
           </div>
-          <div v-if="scored.pending" class="stat">
-            <dt>Max possible</dt><dd>{{ scored.maxScore }}</dd>
+          <div v-if="hasResults && card.pending" class="stat">
+            <dt>Max possible</dt><dd>{{ card.maxScore }}</dd>
             <span class="stat-sub">if every game left covers</span>
+          </div>
+          <div v-else-if="!hasResults" :class="['stat', 'used', state]">
+            <dt>Points used</dt><dd>{{ total }}<small> / {{ TARGET }}</small></dd>
+            <span class="stat-sub">{{ state === 'good' ? '✓ all in' : diff > 0 ? `${diff} left` : `${-diff} over` }}</span>
           </div>
         </dl>
 
         <div class="wh-strip" role="img" :aria-label="`${tally.win} covered, ${tally.loss} missed, ${tally.liveWin + tally.liveLoss} live, ${tally.pending} still to play`">
           <span v-for="x in rowInfo" :key="x.i" :class="['seg', segClass(x), { loy: x.pts === 50 }]" :title="segText(x)">{{ x.skip ? '' : x.pts }}</span>
         </div>
-        <p class="wh-legend">
+        <p v-if="!hasResults" class="wh-legend">
+          <span><i class="dot pending"></i>{{ picked.length }} picked</span>
+          <span v-if="games.length - picked.length"><i class="dot open"></i>{{ games.length - picked.length }} to pick</span>
+          <span v-if="penaltyRows.length" class="wh-adj">{{ adjText }}</span>
+        </p>
+        <p v-else class="wh-legend">
           <span><i class="dot win"></i>{{ tally.win }} covered</span>
           <span><i class="dot loss"></i>{{ tally.loss }} missed</span>
           <span v-if="tally.push"><i class="dot push"></i>{{ tally.push }} push</span>
           <span v-if="tally.liveWin"><i class="dot live-win"></i>{{ tally.liveWin }} covering live</span>
           <span v-if="tally.liveLoss"><i class="dot live-loss"></i>{{ tally.liveLoss }} not covering live</span>
           <span v-if="tally.pending"><i class="dot pending"></i>{{ tally.pending }} to play</span>
-          <span v-if="penaltyRows.length || scored.adjustment" class="wh-adj">
+          <span v-if="penaltyRows.length || card.adjustment" class="wh-adj">
             {{ adjText }}
           </span>
         </p>
@@ -697,7 +698,7 @@ const adjText = computed(() => [
           />
         </section>
         <section v-else v-for="grp in groups" :key="grp.key" class="group">
-          <h2>{{ groupTitle(grp) }} <small v-if="grp.time">{{ grp.time }}</small></h2>
+          <h2>{{ grp.day }} <small v-if="grp.when">{{ grp.when }}</small></h2>
           <GameRow
             v-for="x in grp.items"
             :key="x.i"

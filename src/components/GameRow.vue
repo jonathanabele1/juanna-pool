@@ -125,7 +125,7 @@ const poolStatus = computed(() => (final.value ? finalText.value : live.value ? 
         <b v-else-if="cover.status === 'push'">+{{ num(g.points / 2) }}</b>
       </span>
       <span
-        v-else-if="!live && !final && now"
+        v-else-if="!live && !final && now?.changed"
         :class="['pill', 'now', { changed: now?.changed, flipped: now?.flipped }]"
         :title="now?.title"
       >

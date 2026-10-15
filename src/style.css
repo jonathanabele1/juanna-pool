@@ -115,6 +115,9 @@ h2 small { text-transform: none; letter-spacing: 0; font-weight: 600; margin-lef
 .ldot { width: 7px; height: 7px; border-radius: 50%; background: #dc2626; display: inline-block; animation: livebar 1.4s ease-in-out infinite; }
 .livenote { display: inline-flex; align-items: center; gap: 6px; color: #b91c1c; font-weight: 700; }
 @media (prefers-reduced-motion: reduce) { .wh-strip .seg, .ldot { animation: none !important; } }
+.wh-strip .seg.open, .dot.open { background: #fff; border: 1.5px dashed #cbd5e1; }
+.stat.used.good dd small { color: #15803d; }
+.stat.used.bad dd { color: #b91c1c; }
 .wh-strip .seg.skipped { background: repeating-linear-gradient(45deg, #e2e8f0 0 3px, #fff 3px 6px); }
 .wh-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 0; font-size: .78rem; color: #64748b; }
 .wh-legend span { display: inline-flex; align-items: center; gap: 6px; }
