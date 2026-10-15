@@ -26,6 +26,7 @@ class UserPatch(BaseModel):
     password: str | None = None
     isAdmin: bool | None = None
     active: bool | None = None
+    hidden: bool | None = None  # left out of the league (standings, pool, player list)
 
 
 class PickPatch(BaseModel):
@@ -75,10 +76,20 @@ def update_user(user_id: int, body: UserPatch, me: dict = Depends(auth.current_u
         auth.validate_password(body.password)
         pw = auth.hash_password(body.password)
     user = db.update_user(user_id, display_name=(body.displayName or "").strip() or None, password_hash=pw,
-                          is_admin=body.isAdmin, active=body.active)
+                          is_admin=body.isAdmin, active=body.active, hidden=body.hidden)
     if (pw or body.active is False) and user_id != me["id"]:
         db.delete_user_sessions(user_id)  # signs them out everywhere
     return user
+
+
+@router.delete("/users/{user_id}")
+def delete_user(user_id: int, me: dict = Depends(auth.current_user)):
+    if user_id == me["id"]:
+        raise HTTPException(400, "You can't delete your own account")
+    if not db.get_user(user_id):
+        raise HTTPException(404, "No such user")
+    db.delete_user(user_id)
+    return {"ok": True}
 
 
 # ---------------- weeks ----------------

@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 
-const props = defineProps({ teams: Array })
+const props = defineProps({ teams: Array, mine: { type: Boolean, default: true } })
 
 const query = ref('')
 const onlyBacked = ref(false)
@@ -51,9 +51,9 @@ const callouts = computed(() => {
   const out = []
   const add = (label, team, value, kind) => team && out.push({ label, team, value, kind })
   const bb = best(backed, x => (pct(x.backing) ?? 0) * 1000 + x.backing.net / 100)
-  add('You read best', bb, `${rec(bb?.backing || {})} · ${sgn(bb?.backing.net)} pts`, 'good')
+  add(props.mine ? 'You read best' : 'Reads best', bb, `${rec(bb?.backing || {})} · ${sgn(bb?.backing.net)} pts`, 'good')
   const wb = best(backed, x => (pct(x.backing) ?? 0) * 1000 + x.backing.net / 100, 1)
-  if (wb && wb !== bb) add('Burns you most', wb, `${rec(wb.backing)} · ${sgn(wb.backing.net)} pts`, 'bad')
+  if (wb && wb !== bb) add(props.mine ? 'Burns you most' : 'Burns them most', wb, `${rec(wb.backing)} · ${sgn(wb.backing.net)} pts`, 'bad')
   const mb = best(t.filter(x => x.backing.n >= 2), x => x.backing.n)
   if (mb) add('Most backed', mb, `${mb.backing.n} picks · avg ${mb.backing.avgPts} pts`, 'neutral')
   const bc = best(covered, x => (pct(x.ats) ?? 0) * 1000 + x.games)
@@ -76,8 +76,14 @@ function toggle(abbr) {
       <div>
         <h3>By team</h3>
         <p class="note">
-          <b>Covers</b> = how each team has done against <em>your sheet lines</em> (every game on the weeks you’ve saved).
-          <b>Backing</b> = your picks on that team to cover; <b>Fading</b> = your picks on their opponent.
+          <template v-if="mine">
+            <b>Covers</b> = how each team has done against <em>your sheet lines</em> (every game on the weeks you’ve saved).
+            <b>Backing</b> = your picks on that team to cover; <b>Fading</b> = your picks on their opponent.
+          </template>
+          <template v-else>
+            <b>Covers</b> = how each team has done against the sheet lines (weeks this player saved).
+            <b>Backing</b> = their picks on that team to cover; <b>Fading</b> = their picks on the opponent.
+          </template>
         </p>
       </div>
     </div>
@@ -95,7 +101,7 @@ function toggle(abbr) {
 
     <div class="controls">
       <input v-model="query" type="search" placeholder="Find a team…" aria-label="Find a team" />
-      <label class="chk"><input type="checkbox" v-model="onlyBacked" /> Only teams I’ve backed</label>
+      <label class="chk"><input type="checkbox" v-model="onlyBacked" /> Only teams {{ mine ? 'I’ve' : 'they’ve' }} backed</label>
       <span class="count">{{ rows.length }} team{{ rows.length === 1 ? '' : 's' }}</span>
     </div>
 

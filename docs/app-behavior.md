@@ -32,3 +32,32 @@
 ## Season stats
 Total, weekly average, record vs spread, best/worst week, points earned vs wagered, cover rate by confidence tier,
 favorite/underdog and home/away tendencies, Lock of the Year result, biggest hit/miss, running total.
+
+## The rest of the pool
+- **League** tab (third, after Season stats). *Week*: every player's score for the week. While games are live it's ranked by the score
+  if every game ended now (with ▲/▼ for places gained or lost vs. the final games only) and refreshes every 30s.
+  *Season*: total, average, record, and weeks won (finished weeks only). Tap a player to open their page.
+- A player's page shows their picks week by week (read-only) and their season stats. **Another player's pick on a
+  game stays hidden until that game kicks off**: the server never sends it, admins included.
+- Season stats has a "Viewing" picker to look at anyone's season.
+- Once a game kicks off, its card shows the pool's split (% and count per side, and whether you're with the
+  pool). **Details** lists every player's pick, points and result for that game.
+- **Public betting**: DraftKings' published betting splits (% of bets and % of money on each side of the spread),
+  scraped from DK Network every 10 minutes before kickoff. The last split seen before kickoff is kept in the
+  `splits` table, so it still shows afterward. If DraftKings can't be reached, the row just doesn't show.
+
+## Test live mode (admins)
+- Account menu → **🧪 Test live mode** (shown in admin mode). A purple banner shows while it's on; "Turn off" ends it.
+- The current week (and later ones) pretend to be mid-game: ~40% of games final, ~30% live, the rest not started.
+  Live games move along every 30s (a game runs Q1 to the 4th quarter in 30 minutes, then starts over). Finished
+  weeks stay real.
+- Only the admin who turned it on sees it, and nothing fake is saved. Other players' picks on games that haven't
+  *really* kicked off are replaced with made-up picks, so it can't reveal hidden picks. The Admin tab always shows
+  real data. Turning admin mode off also turns test mode off.
+
+## Accounts (Admin tab)
+- **Hide from league** leaves an account (e.g. a test account) out of everything other players see: the League
+  tab, the pool split on each game, the player list and player pages. The hidden account still sees itself.
+  **Show in league** puts it back. Nothing is deleted.
+- **Delete…** removes the account and all of its picks for good (after an on-page confirm). You can't delete
+  yourself.

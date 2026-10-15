@@ -1,6 +1,15 @@
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
 
-async function call(url, opts) {
+// Admin "test live mode": the server answers with fake live scores (backend/demo.py). Only admins get them.
+let demoLive = (() => { try { return localStorage.getItem('demoLive') === 'on' } catch { return false } })()
+export const isDemoLive = () => demoLive
+export function setDemoLive(on) {
+  demoLive = on
+  try { localStorage.setItem('demoLive', on ? 'on' : 'off') } catch {}
+}
+
+async function call(url, opts = {}) {
+  if (demoLive) opts = { ...opts, headers: { ...opts.headers, 'X-Demo-Live': '1' } }
   const r = await fetch(url, opts)
   if (!r.ok) {
     const body = await r.json().catch(() => ({}))
@@ -27,12 +36,21 @@ export const saveWeek = (n, body) => send('PUT', `/api/weeks/${n}`, body)
 export const deleteWeek = n => call(`/api/weeks/${n}`, { method: 'DELETE' })
 export const uploadImage = (n, file) => call(`/api/weeks/${n}/image`, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
 export const getStats = () => call('/api/stats')
+export const getPlayers = () => call('/api/players')
+export const getPlayerWeeks = id => call(`/api/players/${id}/weeks`)
+export const getPlayerWeek = (id, n) => call(`/api/players/${id}/weeks/${n}`)
+export const getPlayerStats = id => call(`/api/players/${id}/stats`)
+export const getWeekStandings = n => call(`/api/standings/week/${n}`)
+export const getSeasonStandings = () => call('/api/standings/season')
+export const getPool = n => call(`/api/weeks/${n}/pool`)
+export const getSplits = n => call(`/api/splits?week=${n}`)
 export const getTeamCovers = beforeWeek => call(`/api/teams?before_week=${beforeWeek}`)
 
 export const admin = {
   users: () => call('/api/admin/users'),
   createUser: body => send('POST', '/api/admin/users', body),
   updateUser: (id, body) => send('PATCH', `/api/admin/users/${id}`, body),
+  deleteUser: id => call(`/api/admin/users/${id}`, { method: 'DELETE' }),
   week: n => call(`/api/admin/weeks/${n}`),
   setDeadlines: (n, overrides) => send('PUT', `/api/admin/weeks/${n}/deadlines`, { overrides }),
   setPick: (userId, n, body) => send('PATCH', `/api/admin/picks/${userId}/${n}`, body),

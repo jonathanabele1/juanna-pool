@@ -2,10 +2,14 @@
 // Compact version of GameRow for the desktop grid: one game per small tile, everything at a glance.
 import { computed, ref } from 'vue'
 import { coverNow, resolveGame } from '../lines.js'
+import { pct } from '../pool.js'
+import PoolDialog from './PoolDialog.vue'
 
 const props = defineProps({
   game: Object, events: Array, now: Object, result: Object,
   readonly: Boolean,  // view mode: nothing can be changed
+  pool: Object,       // how the pool picked this game (revealed at kickoff)
+  split: Object,      // DraftKings public betting
 })
 
 const DAY_NAMES = { Thurs: 'Thu', Tues: 'Tue', Wed: 'Wed', Fri: 'Fri', Sat: 'Sat', Sun: 'Sun', Mon: 'Mon' }
@@ -70,10 +74,26 @@ function choose(key) { if (!props.readonly) g.value.pick = g.value.pick === key 
 function bump(d) { g.value.points = Math.min(50, Math.max(0, (Number(g.value.points) || 0) + d)) }
 const isLoy = computed(() => Number(g.value.points) === 50)
 const broken = ref({})
+
+// the pool's split on this game, once it kicks off
+const poolOpen = ref(false)
+const poolSides = computed(() => sides.value.map(s => ({
+  key: s.key, abbr: s.team?.abbr || (g.value[s.key] || '').toUpperCase(), name: nameOf(s), logo: s.team?.logo,
+  spread: spreadText(s.key), color: s.team?.color, alternateColor: s.team?.alternateColor,
+})))
+const poolTop = computed(() => {
+  const p = props.pool
+  if (!p?.revealed) return null
+  const n = p.fav.count + p.dog.count
+  if (!n) return { text: 'No picks' }
+  const top = poolSides.value.reduce((a, b) => (p[b.key].count > p[a.key].count ? b : a))
+  if (p.fav.count === p.dog.count) return { text: 'Split 50/50' }
+  return { text: `${pct(p[top.key].count, n)}% ${top.abbr}`, mine: g.value.pick === top.key }
+})
 </script>
 
 <template>
-  <article :class="['tile', { nopick: !g.pick, ro: readonly, live, final }, outcome && `is-${outcome}`, liveStatus && `live-${liveStatus}`]">
+  <article :class="['tile', { nopick: !g.pick && !g.hidden, ro: readonly, live, final }, outcome && `is-${outcome}`, liveStatus && `live-${liveStatus}`]">
     <header class="t-meta">
       <span :class="['when', { on: live }]"><i v-if="live" class="ldot"></i>{{ when }}</span>
       <span v-if="!live && !final && now?.changed" :class="['moved', { flipped: now.flipped }]" :title="now.title">DK {{ now.text }}</span>
@@ -97,8 +117,22 @@ const broken = ref({})
       <span v-if="scoreFor(s.key) != null" class="t-score">{{ scoreFor(s.key) }}</span>
     </button>
 
+    <button v-if="poolTop" type="button" class="t-pool" @click="poolOpen = true" title="See everyone's pick">
+      <span class="lbl">Pool</span> <b :class="{ mine: poolTop.mine }">{{ poolTop.text }}</b><span class="go">›</span>
+    </button>
+    <PoolDialog
+      v-if="poolOpen"
+      :sides="poolSides"
+      :pool="pool"
+      :split="split"
+      :status="live || final ? when : ''"
+      :scores="{ fav: scoreFor('fav'), dog: scoreFor('dog') }"
+      @close="poolOpen = false"
+    />
+
     <footer class="t-foot">
       <span v-if="statusText" :class="['t-status', outcome || liveStatus]">{{ statusText }}</span>
+      <span v-else-if="g.hidden" class="t-hint">🔒 Hidden until kickoff</span>
       <span v-else-if="!g.pick" class="t-hint">{{ readonly ? 'No pick' : 'Tap a team' }}</span>
       <span class="spacer"></span>
       <template v-if="g.pick">
@@ -153,6 +187,11 @@ const broken = ref({})
 .t-score { min-width: 26px; text-align: right; font-size: 1.05rem; font-weight: 800; font-variant-numeric: tabular-nums; }
 .t-team.trailing .t-score { color: #94a3b8; font-weight: 700; }
 
+.t-pool { display: flex; align-items: center; gap: 6px; margin: 2px 0 0; padding: 4px 6px; border: 0; border-radius: 8px; background: #f8fafc; font: inherit; font-size: .72rem; color: #475569; cursor: pointer; text-align: left; }
+.t-pool:hover { background: #eef2ff; }
+.t-pool .lbl { font-size: .6rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #94a3b8; }
+.t-pool b { color: #0f172a; } .t-pool b.mine { color: #1d4ed8; }
+.t-pool .go { margin-left: auto; color: #2563eb; font-weight: 800; }
 .t-foot { display: flex; align-items: center; gap: 6px; min-height: 30px; padding: 4px 4px 0; margin-top: 2px; border-top: 1px solid #f1f5f9; }
 .spacer { flex: 1; }
 .t-hint { font-size: .72rem; color: #94a3b8; }

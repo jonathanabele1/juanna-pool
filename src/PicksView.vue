@@ -2,7 +2,8 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { parseSpreads, parseWeek } from './parse.js'
 import { currentLine, resolveGame } from './lines.js'
-import { getLines, getWeek, saveWeek, deleteWeek, uploadImage, getTeamCovers } from './api.js'
+import { getLines, getWeek, saveWeek, deleteWeek, uploadImage, getTeamCovers, getPool, getSplits } from './api.js'
+import { gameKey, poolByKey } from './pool.js'
 import GameRow from './components/GameRow.vue'
 import GameTile from './components/GameTile.vue'
 import UploadDialog from './components/UploadDialog.vue'
@@ -76,11 +77,27 @@ const resultFor = i => scored.value?.games?.[i]
 const showLinesbar = computed(() => !!linesError.value || events.value.some(e => e.state !== 'post'))
 const liveCount = computed(() => events.value.filter(e => e.state === 'in').length)
 
+// ---- the pool's picks (each game's revealed at kickoff) + DraftKings public betting ----
+const pool = ref({})
+const splits = ref({})
+async function refreshPool() {
+  try { pool.value = poolByKey(await getPool(props.week)) } catch { /* no pool yet */ }
+}
+async function refreshSplits() {
+  if (!events.value.some(e => e.state === 'pre')) return  // public betting only moves before kickoff
+  try { splits.value = await getSplits(props.week) } catch { /* DraftKings unavailable: no public row */ }
+}
+// before kickoff the card just says the pool's picks are coming (not while you're picking: less noise)
+const poolFor = g => { const p = pool.value[gameKey(g)]; return p && (p.revealed || !editMode.value) ? p : null }
+const splitFor = g => splits.value[g.eventId ?? resolveGame(g, events.value).event?.id] || null
+
 // While games are on, re-check scores every 30s (and right away when you come back to the tab).
 async function poll() {
   clearTimeout(timer)
   const wasLive = liveCount.value > 0
   await refreshLines()
+  refreshPool()
+  if (!liveCount.value) refreshSplits()
   if (hasSaved.value && (wasLive || liveCount.value)) {
     const w = await getWeek(props.week).catch(() => null)
     if (w?.score) { scored.value = w.score; emit('scored') }
@@ -124,6 +141,8 @@ onMounted(async () => {
     getTeamCovers(props.week).catch(() => ({})),
   ])
   ats.value = covers
+  refreshPool()
+  refreshSplits()
   if (w?.hasImage) imageUrl.value = imageSrc(w)
   if (w?.saved) {
     hydrate(w)
@@ -526,7 +545,7 @@ const adjText = computed(() => [
             </span>
           </div>
           <div class="stat">
-            <dt>Record</dt><dd>{{ scored.wins }}–{{ scored.losses }}<small v-if="scored.pushes">–{{ scored.pushes }}</small></dd>
+            <dt>Record</dt><dd>{{ scored.wins }}–{{ scored.losses }}<template v-if="scored.pushes">–{{ scored.pushes }}</template></dd>
             <span v-if="liveGames" class="stat-live" title="Games in progress: covering – not covering (– on the number)">
               <i class="ldot"></i>Live {{ liveRec.wins }}–{{ liveRec.losses }}<template v-if="liveRec.pushes">–{{ liveRec.pushes }}</template>
             </span>
@@ -657,6 +676,8 @@ const adjText = computed(() => [
             :now="nowLines[x.i]"
             :result="resultFor(x.i)"
             :readonly="!editMode"
+            :pool="poolFor(x.g)"
+            :split="splitFor(x.g)"
           />
         </section>
         <section v-else-if="flat" class="group">
@@ -670,6 +691,8 @@ const adjText = computed(() => [
             :ats="ats"
             :editing="fixNames && editMode"
             :readonly="!editMode"
+            :pool="poolFor(x.g)"
+            :split="splitFor(x.g)"
             show-day
           />
         </section>
@@ -685,6 +708,8 @@ const adjText = computed(() => [
             :ats="ats"
             :editing="fixNames && editMode"
             :readonly="!editMode"
+            :pool="poolFor(x.g)"
+            :split="splitFor(x.g)"
           />
         </section>
         <p v-if="!visible.length" class="empty">No games match. <button class="link" @click="clearFilters">Clear filters</button></p>

@@ -1,13 +1,26 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
-import { getStats } from './api.js'
+import { computed, ref, watch } from 'vue'
+import { getStats, getPlayerStats } from './api.js'
 import TeamStats from './components/TeamStats.vue'
+
+const props = defineProps({
+  userId: Number,   // whose season (omit: yours)
+  mine: { type: Boolean, default: true },
+  refresh: Number,  // bumps while games are live: reload quietly, keeping scroll and table state
+})
 
 const s = ref(null)
 const error = ref('')
-onMounted(async () => {
-  try { s.value = await getStats() } catch (e) { error.value = e.message }
-})
+async function load(quiet) {
+  if (!quiet) { s.value = null; error.value = '' }
+  try {
+    s.value = await (props.userId && !props.mine ? getPlayerStats(props.userId) : getStats())
+    error.value = ''
+  } catch (e) { if (!quiet) error.value = e.message }
+}
+watch(() => [props.userId, props.mine], () => load(false), { immediate: true })
+watch(() => props.refresh, () => load(true))
+const you = computed(() => (props.mine ? 'your' : 'their'))
 
 const fmt = n => (n == null ? '—' : n)
 const sign = n => (n > 0 ? `+${n}` : n)
@@ -36,9 +49,10 @@ const cumulative = computed(() => {
 
 <template>
   <p v-if="error" class="err">Couldn’t load stats: {{ error }}</p>
-  <p v-else-if="!s" class="loading">Crunching your season…</p>
+  <p v-else-if="!s" class="loading">Crunching {{ you }} season…</p>
   <p v-else-if="!s.weeksPlayed" class="empty">
-    No scored weeks yet. Save your picks for a week whose games have finished and your stats will show up here.
+    <template v-if="mine">No scored weeks yet. Save your picks for a week whose games have finished and your stats will show up here.</template>
+    <template v-else>No scored weeks yet for this player.</template>
   </p>
 
   <div v-else class="stats">
@@ -62,7 +76,7 @@ const cumulative = computed(() => {
           </g>
         </svg>
       </div>
-      <p class="note">Dashed line = your weekly average. Lighter bars are weeks still in progress.</p>
+      <p class="note">Dashed line = {{ you }} weekly average. Lighter bars are weeks still in progress.</p>
     </section>
 
     <div class="grid">
@@ -88,7 +102,7 @@ const cumulative = computed(() => {
           <span class="track2"><span class="fill2" :style="{ width: (t.pct || 0) + '%' }"></span></span>
           <span class="bv2">{{ t.picks ? `${t.pct}% (${t.wins}/${t.picks})` : '—' }}</span>
         </div>
-        <p class="note">Are your high-confidence picks actually your best ones?</p>
+        <p class="note">Are {{ you }} high-confidence picks actually the best ones?</p>
       </section>
 
       <section class="card">
@@ -98,7 +112,7 @@ const cumulative = computed(() => {
           <span class="track2"><span class="fill2 alt" :style="{ width: (r.pct || 0) + '%' }"></span></span>
           <span class="bv2">{{ r.picks ? `${r.pct}% (${r.wins}/${r.picks})` : '—' }}</span>
         </div>
-        <p class="note">Cover rate when you pick each type.</p>
+        <p class="note">Cover rate on each type of pick.</p>
       </section>
 
       <section class="card">
@@ -112,7 +126,7 @@ const cumulative = computed(() => {
       </section>
     </div>
 
-    <TeamStats v-if="s.teams?.length" :teams="s.teams" />
+    <TeamStats v-if="s.teams?.length" :teams="s.teams" :mine="mine" />
   </div>
 </template>
 

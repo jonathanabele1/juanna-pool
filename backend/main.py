@@ -8,12 +8,14 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import admin, auth, db, deadlines, espn, scoring
-from .weeks import deadline_info, results_for, scored, user_week, user_weeks
+from . import admin, auth, db, deadlines, demo, espn, league, scoring
+from .weeks import deadline_info, season, user_week, user_weeks, week_summaries
 
 app = FastAPI()
 app.include_router(auth.router)
 app.include_router(admin.router)
+app.include_router(league.router)
+app.add_middleware(demo.Middleware)
 auth.bootstrap_admin()
 
 MAX_IMAGE = 10 * 1024 * 1024
@@ -63,13 +65,7 @@ def announcement(user: dict = Depends(auth.current_user)):
 
 @app.get("/api/weeks")
 def weeks(user: dict = Depends(auth.current_user)):
-    out = []
-    for w, games, p in user_weeks(user["id"]):
-        s = scored(w["week"], games, p["adjustment"])
-        out.append({"week": w["week"], "score": s["score"], "complete": s["complete"],
-                    "wins": s["wins"], "losses": s["losses"], "pushes": s["pushes"],
-                    "live": sum(s["live"][k] for k in ("wins", "losses", "pushes")) > 0})
-    return out
+    return week_summaries(user["id"])
 
 
 @app.get("/api/weeks/{n}")
@@ -124,13 +120,7 @@ def get_image(n: int, user: dict = Depends(auth.current_user)):
 
 @app.get("/api/stats")
 def stats(user: dict = Depends(auth.current_user)):
-    rows = user_weeks(user["id"])
-    scored_weeks = [(w["week"], scoring.score_week({"week": w["week"], "games": games, "adjustment": p["adjustment"]},
-                                                   results_for(w["week"]))) for w, games, p in rows]
-    out = scoring.season_stats(scored_weeks)
-    out["teams"] = scoring.team_stats([{"week": w["week"], "games": g} for w, g, _ in rows],
-                                      db.get_results(), db.get_teams())
-    return out
+    return season(user["id"])
 
 
 @app.get("/api/teams")

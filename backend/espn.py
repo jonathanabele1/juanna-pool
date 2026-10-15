@@ -7,7 +7,7 @@ import time
 import httpx
 from fastapi import HTTPException
 
-from . import db
+from . import db, demo
 
 ESPN = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
 SEASON = 2026
@@ -25,6 +25,7 @@ def _team(c: dict) -> dict:
         "name": t.get("name", ""),
         "logo": t.get("logo"),
         "color": t.get("color"),
+        "alternateColor": t.get("alternateColor"),
     }
 
 
@@ -115,7 +116,22 @@ def _event(e: dict) -> dict:
 
 
 def fetch_week(week: int | None = None) -> dict:
-    """Events for a week (None = ESPN's current week). Final results are persisted."""
+    """Events for a week (None = ESPN's current week). Final results are persisted.
+    In an admin's test live mode the current week (or a later one) comes back with fake scores (see demo.py)."""
+    data = _fetch_week(week)
+    if demo.active() and data["week"] and data["week"] >= _current_week():
+        return demo.scoreboard(data)  # finished weeks stay real
+    return data
+
+
+def _current_week() -> int:
+    try:
+        return _fetch_week()["week"] or 1
+    except HTTPException:
+        return 1
+
+
+def _fetch_week(week: int | None = None) -> dict:
     now = time.time()
     hit = _cache.get(week)
     if hit:

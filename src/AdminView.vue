@@ -59,6 +59,7 @@ const nuMsg = ref('')
 const nuErr = ref('')
 const resetFor = ref(null)
 const resetPw = ref('')
+const deleteFor = ref(null)
 
 const loadUsers = async () => { users.value = await admin.users() }
 
@@ -87,6 +88,13 @@ async function patchUser(u, body, msg) {
     await admin.updateUser(u.id, body)
     flash(notes, `u-${u.id}`, msg)
     loadUsers()
+  } catch (e) { flash(notes, `u-${u.id}`, e.message) }
+}
+async function doDelete(u) {
+  try {
+    await admin.deleteUser(u.id)
+    deleteFor.value = null
+    loadUsers(); loadWeek()
   } catch (e) { flash(notes, `u-${u.id}`, e.message) }
 }
 async function doReset(u) {
@@ -217,14 +225,20 @@ onMounted(() => {
       <p v-if="nuErr" class="err">{{ nuErr }}</p>
 
       <ul class="users">
-        <li v-for="u in users" :key="u.id" :class="{ inactive: !u.active }">
+        <li v-for="u in users" :key="u.id" :class="{ inactive: !u.active, hidden: u.hidden }">
           <div class="u-who">
             <b>{{ u.displayName }}</b> <small>@{{ u.username }}</small>
             <span v-if="u.isAdmin" class="tag">admin</span>
+            <span v-if="u.hidden" class="tag off" title="Left out of the League tab, the pool split and the player list">hidden</span>
             <span v-if="!u.active" class="tag off">deactivated</span>
           </div>
           <div class="u-actions">
-            <template v-if="resetFor === u.id">
+            <template v-if="deleteFor === u.id">
+              <span class="confirm">Delete <b>{{ u.displayName }}</b> and all their picks? This can’t be undone.</span>
+              <button class="btn danger-solid sm" @click="doDelete(u)">Delete</button>
+              <button class="btn ghost sm" @click="deleteFor = null">Cancel</button>
+            </template>
+            <template v-else-if="resetFor === u.id">
               <input v-model="resetPw" placeholder="New password" minlength="6" />
               <button class="btn primary sm" :disabled="resetPw.length < 6" @click="doReset(u)">Set</button>
               <button class="btn ghost sm" @click="resetFor = null">Cancel</button>
@@ -233,8 +247,11 @@ onMounted(() => {
               <button class="btn ghost sm" @click="resetFor = u.id; resetPw = ''">Reset password</button>
               <template v-if="u.id !== me.id">
                 <button class="btn ghost sm" @click="patchUser(u, { isAdmin: !u.isAdmin }, u.isAdmin ? 'No longer admin' : 'Now an admin')">{{ u.isAdmin ? 'Remove admin' : 'Make admin' }}</button>
-                <button class="btn ghost sm" :class="{ danger: u.active }" @click="patchUser(u, { active: !u.active }, u.active ? 'Deactivated' : 'Reactivated')">{{ u.active ? 'Deactivate' : 'Reactivate' }}</button>
+                <button v-if="!u.active" class="btn ghost sm" @click="patchUser(u, { active: true }, 'Reactivated')">Reactivate</button>
               </template>
+              <button class="btn ghost sm" :title="u.hidden ? 'Show this account in the League tab and pool picks' : 'Leave this account out of the League tab and pool picks (e.g. a test account)'"
+                      @click="patchUser(u, { hidden: !u.hidden }, u.hidden ? 'Now in the league' : 'Hidden from the league')">{{ u.hidden ? 'Show in league' : 'Hide from league' }}</button>
+              <button v-if="u.id !== me.id" class="btn ghost sm del" @click="deleteFor = u.id; resetFor = null">Delete…</button>
             </template>
             <small class="note">{{ notes[`u-${u.id}`] }}</small>
           </div>
@@ -313,6 +330,9 @@ tr.inactive, li.inactive { opacity: .55; }
 .u-who small { color: #94a3b8; }
 .u-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .u-actions input { width: 140px; }
+.confirm { font-size: .85rem; color: #7f1d1d; }
+.btn.del { color: #b91c1c; }
+li.hidden .u-who b { color: #64748b; }
 .tag { font-size: .65rem; text-transform: uppercase; letter-spacing: .06em; background: #0f172a; color: #fff; padding: 2px 6px; border-radius: 6px; margin-left: 4px; }
 .tag.off { background: #94a3b8; }
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }

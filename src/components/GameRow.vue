@@ -1,6 +1,8 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import TeamCard from './TeamCard.vue'
+import PoolBar from './PoolBar.vue'
+import PoolDialog from './PoolDialog.vue'
 import { coverNow, resolveGame } from '../lines.js'
 
 const props = defineProps({
@@ -8,6 +10,9 @@ const props = defineProps({
   editing: Boolean,   // "fix names" inputs
   readonly: Boolean,  // view mode: nothing can be changed
   showDay: Boolean,   // flat (sorted) lists don't have day headings, so show the day on the card
+  pool: Object,       // how the pool picked this game (revealed at kickoff)
+  split: Object,      // DraftKings public betting
+  otherPlayer: Boolean, // someone else's picks: the pool bar doesn't compare against them
 })
 
 const DAY_NAMES = { Thurs: 'Thu', Tues: 'Tue', Wed: 'Wed', Fri: 'Fri', Sat: 'Sat', Sun: 'Sun', Mon: 'Mon' }
@@ -85,10 +90,19 @@ function bump(d) {
 const isLoy = computed(() => Number(g.value.points) === 50)
 function toggleLoy() { g.value.points = isLoy.value ? 2 : 50 }
 const deltaText = d => (d > 0 ? `▲ +${d}` : `▼ ${d}`)
+
+// ---- the pool + public betting on this game ----
+const poolOpen = ref(false)
+const spreadOf = key => (noLine.value ? '' : !g.value.spread ? 'PK' : key === 'fav' ? `−${g.value.spread}` : `+${g.value.spread}`)
+const poolSides = computed(() => sides.value.map(s => ({
+  key: s.key, abbr: s.team?.abbr || (g.value[s.key] || '').toUpperCase(), name: s.team?.name || g.value[s.key],
+  logo: s.team?.logo, spread: spreadOf(s.key), color: s.team?.color, alternateColor: s.team?.alternateColor,
+})))
+const poolStatus = computed(() => (final.value ? finalText.value : live.value ? clockText.value : ''))
 </script>
 
 <template>
-  <article :class="['game', { nopick: !g.pick, ro: readonly, live, final }, outcome && `is-${outcome}`, liveStatus && `live-${liveStatus}`]">
+  <article :class="['game', { nopick: !g.pick && !g.hidden, ro: readonly, live, final }, outcome && `is-${outcome}`, liveStatus && `live-${liveStatus}`]">
     <header class="meta">
       <span v-if="showDay" class="pill day">{{ dayText }}</span>
       <span v-if="final" class="pill final">{{ finalText }}</span>
@@ -111,7 +125,7 @@ const deltaText = d => (d > 0 ? `▲ +${d}` : `▼ ${d}`)
         <b v-else-if="cover.status === 'push'">+{{ num(g.points / 2) }}</b>
       </span>
       <span
-        v-else-if="!live && !final"
+        v-else-if="!live && !final && now"
         :class="['pill', 'now', { changed: now?.changed, flipped: now?.flipped }]"
         :title="now?.title"
       >
@@ -156,6 +170,24 @@ const deltaText = d => (d > 0 ? `▲ +${d}` : `▼ ${d}`)
       <span v-if="info.lastPlay" class="last" :title="info.lastPlay">{{ info.lastPlay }}</span>
     </p>
 
+    <PoolBar
+      v-if="pool || split"
+      :sides="poolSides"
+      :pool="pool"
+      :split="split"
+      :mine="otherPlayer ? null : g.pick"
+      @details="poolOpen = true"
+    />
+    <PoolDialog
+      v-if="poolOpen && pool?.revealed"
+      :sides="poolSides"
+      :pool="pool"
+      :split="split"
+      :status="poolStatus"
+      :scores="{ fav: scoreFor('fav'), dog: scoreFor('dog') }"
+      @close="poolOpen = false"
+    />
+
     <footer v-if="!readonly" class="foot">
       <span class="picked">
         <template v-if="g.pick">Picking <b>{{ pickedName }}</b></template>
@@ -175,7 +207,8 @@ const deltaText = d => (d > 0 ? `▲ +${d}` : `▼ ${d}`)
 
     <footer v-else class="foot ro">
       <span class="picked">
-        <template v-if="!g.pick">No pick</template>
+        <template v-if="g.hidden"><span aria-hidden="true">🔒</span> Pick hidden until kickoff</template>
+        <template v-else-if="!g.pick">No pick</template>
         <template v-else>Picked <b>{{ pickedName }}</b></template>
       </span>
       <span class="spacer"></span>

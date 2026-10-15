@@ -10,6 +10,8 @@ import shutil
 import sqlite3
 from pathlib import Path
 
+from . import demo
+
 DATA = Path(os.environ.get("POOL_DATA_DIR") or Path(__file__).parent / "data")
 DATA.mkdir(parents=True, exist_ok=True)
 DB_PATH = DATA / "pool.db"
@@ -26,6 +28,7 @@ CREATE TABLE IF NOT EXISTS users (
   display_name TEXT NOT NULL DEFAULT '',
   password_hash TEXT NOT NULL,
   active INTEGER NOT NULL DEFAULT 1,
+  hidden INTEGER NOT NULL DEFAULT 0,  -- left out of the league (standings, pool, player list): test accounts
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 -- a user is an admin when they have a row here
@@ -72,6 +75,12 @@ CREATE TABLE IF NOT EXISTS results (
   home_abbr TEXT, away_abbr TEXT,
   home_score INTEGER, away_score INTEGER,
   kickoff TEXT
+);
+-- DraftKings public betting splits, last seen before kickoff
+CREATE TABLE IF NOT EXISTS splits (
+  event_id TEXT PRIMARY KEY,
+  data TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
 
@@ -125,6 +134,8 @@ def init() -> None:
         if "is_admin" in _columns(c, "users"):  # admin flag moved to its own table
             c.execute("INSERT OR IGNORE INTO admins (user_id) SELECT id FROM users WHERE is_admin=1")
             c.execute("ALTER TABLE users DROP COLUMN is_admin")
+        if "hidden" not in _columns(c, "users"):
+            c.execute("ALTER TABLE users ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
         if "kickoff" not in _columns(c, "results"):
             c.execute("ALTER TABLE results ADD COLUMN kickoff TEXT")
 
@@ -141,7 +152,8 @@ def _user_row(r) -> dict | None:
     if not r:
         return None
     return {"id": r["id"], "username": r["username"], "displayName": r["display_name"] or r["username"],
-            "isAdmin": bool(r["is_admin"]), "active": bool(r["active"]), "createdAt": r["created_at"]}
+            "isAdmin": bool(r["is_admin"]), "active": bool(r["active"]), "hidden": bool(r["hidden"]),
+            "createdAt": r["created_at"]}
 
 
 def count_users() -> int:
@@ -182,7 +194,7 @@ def list_users() -> list[dict]:
 
 
 def update_user(user_id: int, is_admin: bool | None = None, **fields) -> dict | None:
-    cols = ("display_name", "password_hash", "active")
+    cols = ("display_name", "password_hash", "active", "hidden")
     sets = [(k, int(v) if isinstance(v, bool) else v) for k, v in fields.items() if k in cols and v is not None]
     with conn() as c:
         if sets:
@@ -193,6 +205,14 @@ def update_user(user_id: int, is_admin: bool | None = None, **fields) -> dict | 
         elif is_admin is False:
             c.execute("DELETE FROM admins WHERE user_id=?", (user_id,))
         return _user_row(c.execute(f"{USER_SQL} WHERE u.id=?", (user_id,)).fetchone())
+
+
+def delete_user(user_id: int) -> None:
+    """The account and everything of theirs: picks and sessions (their admin row goes with the user)."""
+    with conn() as c:
+        c.execute("DELETE FROM picks WHERE user_id=?", (user_id,))
+        c.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
+        c.execute("DELETE FROM users WHERE id=?", (user_id,))
 
 
 def create_session(token_hash: str, user_id: int, expires_at: str) -> None:
@@ -312,20 +332,31 @@ def _picks_row(r) -> dict:
     }
 
 
+def _shown(rows: list[dict]) -> list[dict]:
+    """In an admin's test live mode, other players' picks on games that haven't really started are made up."""
+    if demo.active():
+        real = get_results(real=True)
+        for r in rows:
+            r["picks"] = demo.picks(r["userId"], r["picks"], real)
+    return rows
+
+
 def get_picks(user_id: int, n: int) -> dict | None:
     with conn() as c:
         r = c.execute("SELECT * FROM picks WHERE user_id=? AND week=?", (user_id, n)).fetchone()
-    return _picks_row(r) if r else None
+    return _shown([_picks_row(r)])[0] if r else None
 
 
 def user_picks(user_id: int) -> dict[int, dict]:
     with conn() as c:
-        return {r["week"]: _picks_row(r) for r in c.execute("SELECT * FROM picks WHERE user_id=?", (user_id,))}
+        rows = [_picks_row(r) for r in c.execute("SELECT * FROM picks WHERE user_id=?", (user_id,))]
+    return {r["week"]: r for r in _shown(rows)}
 
 
 def week_picks(n: int) -> dict[int, dict]:
     with conn() as c:
-        return {r["user_id"]: _picks_row(r) for r in c.execute("SELECT * FROM picks WHERE week=?", (n,))}
+        rows = [_picks_row(r) for r in c.execute("SELECT * FROM picks WHERE week=?", (n,))]
+    return {r["userId"]: r for r in _shown(rows)}
 
 
 def save_picks(user_id: int, n: int, picks: dict, label: str, adjustment: int | None = None,
@@ -386,9 +417,11 @@ def save_results(week: int, events: list[dict]) -> None:
         c.executemany("INSERT OR REPLACE INTO teams VALUES (?,?,?,?,?)", teams.values())
 
 
-def get_results() -> dict[str, dict]:
+def get_results(real: bool = False) -> dict[str, dict]:
+    """Every game's last-known state and score (with an admin's fake scores in test live mode, unless `real`)."""
     with conn() as c:
-        return {r["event_id"]: dict(r) for r in c.execute("SELECT * FROM results")}
+        rows = {r["event_id"]: dict(r) for r in c.execute("SELECT * FROM results")}
+    return rows if real else demo.results(rows)
 
 
 def kickoffs(week: int) -> dict[str, str]:
@@ -410,6 +443,23 @@ def stored_events(week: int, since: str) -> list[dict]:
     return [{"id": r["event_id"], "kickoff": r["kickoff"], "state": r["state"], "detail": "",
              "home": team(r, "h"), "away": team(r, "a"),
              "scores": {"home": r["home_score"], "away": r["away_score"]}, "line": None} for r in rows]
+
+
+def save_splits(by_event: dict[str, dict]) -> None:
+    with conn() as c:
+        c.executemany("""INSERT INTO splits (event_id, data, updated_at) VALUES (?,?, datetime('now'))
+                         ON CONFLICT(event_id) DO UPDATE SET data=excluded.data, updated_at=datetime('now')""",
+                      [(eid, json.dumps(d)) for eid, d in by_event.items()])
+
+
+def get_splits(event_ids: list[str] | None = None) -> dict[str, dict]:
+    with conn() as c:
+        if event_ids is None:
+            rows = c.execute("SELECT * FROM splits").fetchall()
+        else:
+            rows = c.execute(f"SELECT * FROM splits WHERE event_id IN ({','.join('?' * len(event_ids))})",
+                             event_ids).fetchall()
+    return {r["event_id"]: {**json.loads(r["data"]), "updatedAt": r["updated_at"]} for r in rows}
 
 
 def get_teams() -> dict[str, dict]:

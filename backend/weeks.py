@@ -81,6 +81,41 @@ def user_week(user_id: int, n: int) -> dict:
     }
 
 
+def in_league(u: dict, viewer_id: int | None) -> bool:
+    """Hidden accounts (tests) are left out of the league for everyone but themselves."""
+    return not u["hidden"] or u["id"] == viewer_id
+
+
+def week_entries(n: int, viewer_id: int | None = None) -> tuple[dict | None, dict, list[dict]]:
+    """(week lines, results, every player with saved picks: {user, games, picks, score}) scored in one pass.
+    Hidden accounts are left out, unless it's the viewer's own.
+    The scores keep `_picked` (for season stats): don't return them to the browser as-is."""
+    w = db.get_week(n)
+    if not w or not w["games"]:
+        return w, {}, []
+    info = deadline_info(n, w)  # also refreshes the week's results
+    results = db.get_results()
+    users = {u["id"]: u for u in db.list_users()}
+    out = []
+    for uid, p in db.week_picks(n).items():
+        if uid not in users or not has_picks(p) or not in_league(users[uid], viewer_id):
+            continue
+        games = merge(w["games"], p, info)
+        s = scoring.score_week({"week": n, "games": games, "adjustment": p["adjustment"]}, results)
+        out.append({"user": users[uid], "games": games, "picks": p, "score": s})
+    return w, results, out
+
+
+def started(g: dict, results: dict, week_games: list[dict]) -> bool:
+    """Has this game kicked off? Games we couldn't match to ESPN count once every matched game is final."""
+    res = results.get(str(g.get("eventId") or ""))
+    if res:
+        return res["state"] in ("in", "post")
+    known = [results.get(str(x.get("eventId") or "")) for x in week_games]
+    known = [r for r in known if r]
+    return bool(known) and all(r["state"] == "post" for r in known)
+
+
 def user_weeks(user_id: int) -> list[tuple[dict, list[dict], dict]]:
     """(week lines, merged saved games, picks row) for every week this user has picks on."""
     mine = db.user_picks(user_id)
@@ -89,4 +124,25 @@ def user_weeks(user_id: int) -> list[tuple[dict, list[dict], dict]]:
         p = mine.get(w["week"])
         if w["games"] and has_picks(p):
             out.append((w, merge(w["games"], p, deadline_info(w["week"], w), only_saved=True), p))
+    return out
+
+
+def week_summaries(user_id: int) -> list[dict]:
+    """Score + record for each week a user has picks on (the week bar)."""
+    out = []
+    for w, games, p in user_weeks(user_id):
+        s = scored(w["week"], games, p["adjustment"])
+        out.append({"week": w["week"], "score": s["score"], "complete": s["complete"],
+                    "wins": s["wins"], "losses": s["losses"], "pushes": s["pushes"],
+                    "live": sum(s["live"][k] for k in ("wins", "losses", "pushes")) > 0})
+    return out
+
+
+def season(user_id: int) -> dict:
+    rows = user_weeks(user_id)
+    scored_weeks = [(w["week"], scoring.score_week({"week": w["week"], "games": games, "adjustment": p["adjustment"]},
+                                                   results_for(w["week"]))) for w, games, p in rows]
+    out = scoring.season_stats(scored_weeks)
+    out["teams"] = scoring.team_stats([{"week": w["week"], "games": g} for w, g, _ in rows],
+                                      db.get_results(), db.get_teams())
     return out

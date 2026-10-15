@@ -64,6 +64,11 @@ h2 small { text-transform: none; letter-spacing: 0; font-weight: 600; margin-lef
 .announce { margin: 0 0 10px; padding: 10px 14px; border-radius: 14px; background: #fef9c3; color: #713f12; font-size: .9rem; white-space: pre-line; }
 .tabs button { border: 0; background: none; padding: 7px 14px; border-radius: 9px; font-weight: 700; color: #475569; cursor: pointer; }
 .tabs button.on { background: #fff; color: #0f172a; box-shadow: 0 1px 3px #0002; }
+.demobar { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; padding: 10px 14px; border-radius: 14px; background: #f5f3ff; border: 1px solid #ddd6fe; color: #4c1d95; font-size: .82rem; }
+.demobar span { flex: 1; }
+.demobar b { margin-right: 4px; }
+.demobar .btn { background: #7c3aed; color: #fff; flex: none; }
+.statsfor { margin-bottom: 12px; }
 .loading { color: #64748b; text-align: center; padding: 40px 10px; }
 .neg { color: #b91c1c; }
 
@@ -212,4 +217,8 @@ h2 small { text-transform: none; letter-spacing: 0; font-weight: 600; margin-lef
   display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px;
   /* break out of the narrow page column so all the games fit on screen */
   width: min(1240px, 100vw - 40px); margin-left: calc(50% - min(620px, 50vw - 20px));
+}
+@media (max-width: 520px) {
+  .tabs { display: flex; flex-wrap: nowrap; width: 100%; }
+  .tabs button { flex: 1 1 auto; padding: 7px 6px; font-size: .86rem; white-space: nowrap; }
 }
