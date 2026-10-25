@@ -44,7 +44,7 @@ const serverCopy = ref(null)    // last saved version, so "Cancel" can put thing
 
 // ---- live lines + results for this week (DraftKings via ESPN, through the local API) ----
 const events = ref([])
-const ats = ref({})            // team cover records from your saved sheets, before this week
+const teams = ref({})          // per-team stats from your saved sheets, before this week (by abbr)
 const linesError = ref('')
 const loadingLines = ref(false)
 let timer
@@ -147,7 +147,7 @@ onMounted(async () => {
     getWeek(props.week).catch(() => null),
     getTeamCovers(props.week).catch(() => ({})),
   ])
-  ats.value = covers
+  teams.value = covers
   refreshPool()
   refreshSplits()
   if (w?.hasImage) imageUrl.value = imageSrc(w)
@@ -787,7 +787,7 @@ const adjText = computed(() => [
           :events="events"
           :now="nowLines[x.i]"
           :result="resultFor(x.i)"
-          :ats="ats"
+          :teams="teams"
           :editing="fixNames && editMode"
           :readonly="!editMode"
           :editable="!editMode"
@@ -807,7 +807,7 @@ const adjText = computed(() => [
           :events="events"
           :now="nowLines[x.i]"
           :result="resultFor(x.i)"
-          :ats="ats"
+          :teams="teams"
           :editing="fixNames && editMode"
           :readonly="!editMode"
           :editable="!editMode"

@@ -157,7 +157,7 @@ def team_stats(weeks: list[dict], results: dict, teams: dict, before_week: int |
         return {"games": 0, "ats": {"w": 0, "l": 0, "p": 0}, "su": {"w": 0, "l": 0, "t": 0},
                 "asFav": {"w": 0, "l": 0, "p": 0}, "asDog": {"w": 0, "l": 0, "p": 0},
                 "backing": {"n": 0, "w": 0, "l": 0, "p": 0, "net": 0, "pts": 0},
-                "fading": {"n": 0, "w": 0, "l": 0, "p": 0, "net": 0}}
+                "fading": {"n": 0, "w": 0, "l": 0, "p": 0, "net": 0}, "form": []}
 
     out: dict[str, dict] = {}
     for wk in sorted(weeks, key=lambda w: w["week"]):
@@ -178,6 +178,7 @@ def team_stats(weeks: list[dict], results: dict, teams: dict, before_week: int |
                 t["games"] += 1
                 _tally(t["ats"], outcome)
                 _tally(t[role], outcome)
+                t["form"].append(outcome)  # cover results in week order
                 t["su"]["w" if mine > theirs else "l" if mine < theirs else "t"] += 1
             if not g.get("pick"):
                 continue
@@ -200,6 +201,7 @@ def team_stats(weeks: list[dict], results: dict, teams: dict, before_week: int |
             "logo": info.get("logo"),
             "color": info.get("color"),
             **t,
+            "form": t["form"][-5:],
             "backing": {**b, "avgPts": round(b["pts"] / b["n"], 1) if b["n"] else None},
         })
     return sorted(rows, key=lambda r: r["name"])

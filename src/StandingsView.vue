@@ -1,40 +1,32 @@
 <script setup>
-// The whole pool: this week's leaderboard (live while games are on) and the season table. Tap a player to see their picks.
+// The whole pool: this week's leaderboard (live while games are on), then the season table. Tap a player to see their picks.
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { getWeekStandings, getSeasonStandings } from './api.js'
 
 const props = defineProps({ currentWeek: Number })
 const emit = defineEmits(['open'])
 
-const saved = (k, d) => { try { return localStorage.getItem(k) ?? d } catch { return d } }
-const mode = ref(saved('standingsMode', 'week'))
-watch(mode, v => { try { localStorage.setItem('standingsMode', v) } catch {} })
 const week = ref(props.currentWeek || 1)
 watch(() => props.currentWeek, w => { if (w && !data.value) week.value = w })
 
 const data = ref(null)      // this week's standings
 const season = ref(null)
 const error = ref('')
-const loading = ref(false)
 let timer
 const LIVE_POLL = 30 * 1000
 
+async function loadWeek() {
+  const n = week.value
+  const d = await getWeekStandings(n)
+  if (n === week.value) data.value = d
+}
 async function load(quiet = false) {
   clearTimeout(timer)
-  if (!quiet) loading.value = true
   try {
-    if (mode.value === 'week') {
-      const n = week.value
-      const d = await getWeekStandings(n)
-      if (n === week.value) data.value = d
-    } else {
-      season.value = await getSeasonStandings()
-    }
+    await Promise.all([loadWeek(), getSeasonStandings().then(d => { season.value = d })])
     error.value = ''
   } catch (e) {
     if (!quiet) error.value = e.message
-  } finally {
-    loading.value = false
   }
   // keep it live while games are on (the season table moves with the live week too)
   if (live.value) timer = setTimeout(() => load(true), LIVE_POLL)
@@ -42,16 +34,23 @@ async function load(quiet = false) {
 const onVisible = () => { if (document.visibilityState === 'visible') load(true) }
 onMounted(() => { load(); document.addEventListener('visibilitychange', onVisible) })
 onUnmounted(() => { clearTimeout(timer); document.removeEventListener('visibilitychange', onVisible) })
-watch([mode, week], () => { if (mode.value === 'week') data.value = null; load() })
+watch(week, () => { data.value = null; loadWeek().catch(e => { error.value = e.message }) })
 
-const live = computed(() => (mode.value === 'week'
-  ? (data.value?.games.live || 0) > 0
-  : (season.value?.rows || []).some(r => r.projected !== r.total)))
+const seasonRows = computed(() => season.value?.rows || [])
+const live = computed(() => (data.value?.games.live || 0) > 0 || seasonRows.value.some(r => r.projected !== r.total))
 const g = computed(() => data.value?.games || { total: 0, live: 0, final: 0 })
 const started = computed(() => g.value.live + g.value.final > 0)
 const weekOver = computed(() => g.value.total > 0 && g.value.final === g.value.total)
 const isLive = computed(() => g.value.live > 0)
 const rows = computed(() => data.value?.rows || [])
+const statusText = computed(() => {
+  if (!data.value) return ''
+  if (!data.value.posted) return 'No lines yet'
+  if (weekOver.value) return 'Final'
+  if (isLive.value) return `${g.value.live} live · ${g.value.final}/${g.value.total} final`
+  if (!started.value) return 'Not started'
+  return `${g.value.final} of ${g.value.total} final`
+})
 
 // Week columns: Score always; Live while games are on; Max and Live max while games are left to play
 // (Live max: games on now end as they stand, every game not started covers). Tap a header to sort by it,
@@ -78,40 +77,82 @@ const ariaSort = c => (key.value === c ? (sortDir.value < 0 ? 'descending' : 'as
 const rec = r => `${r.wins}–${r.losses}${r.pushes ? `–${r.pushes}` : ''}`
 const liveRec = r => (r.live.wins + r.live.losses + r.live.pushes ? `${r.live.wins}–${r.live.losses}${r.live.pushes ? `–${r.live.pushes}` : ''}` : '')
 const move = r => r.rank - r.projectedRank   // places gained if the live games ended now
+const seasonMove = r => (r.lastRank ? r.lastRank - r.rank : 0)   // places gained since the week before
 const ord = n => `${n}${['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) ? 0 : n % 10] || 'th'}`
+const names = list => (list.length > 2 ? `${list[0].name} +${list.length - 1}` : list.map(r => r.name).join(' & '))
+
+// ---- the three numbers above each table ----
+// week: who's on top (live while games are on), where you stand, the pool's average
+const weekTiles = computed(() => {
+  const list = rows.value
+  if (!started.value || !list.length) return []
+  const by = isLive.value ? 'projected' : 'score', rk = isLive.value ? 'projectedRank' : 'rank'
+  const top = list.filter(r => r[rk] === 1)
+  const me = list.find(r => r.me)
+  const avg = Math.round((list.reduce((t, r) => t + r[by], 0) / list.length) * 10) / 10
+  return [
+    { label: weekOver.value ? 'Winner' : 'Leading', value: top[0][by], sub: names(top), crown: weekOver.value },
+    me ? { label: 'You', value: ord(me[rk]), sub: `of ${list.length} · ${me[by]} pts`, me: true }
+      : { label: 'Players', value: list.length, sub: `${data.value.noPicks.length} without picks` },
+    { label: 'Pool average', value: avg, sub: isLive.value ? 'if it ended now' : weekOver.value ? 'final' : 'so far' },
+  ]
+})
+// season: the leader, where you stand, the best single week
+const seasonTiles = computed(() => {
+  const list = seasonRows.value
+  if (!list.length) return []
+  const top = list.filter(r => r.rank === 1)
+  const second = list.find(r => r.rank > 1)
+  const me = list.find(r => r.me)
+  const best = list.filter(r => r.best).reduce((a, b) => (!a || b.best.score > a.best.score ? b : a), null)
+  return [
+    { label: 'Leader', value: top[0].total, sub: second ? `${names(top)} · +${top[0].total - second.total}` : names(top) },
+    me ? { label: 'You', value: ord(me.rank), sub: me.rank === 1 ? 'in the lead' : `${top[0].total - me.total} back`, me: true }
+      : { label: 'Players', value: list.length, sub: 'this season' },
+    best && { label: 'Best week', value: best.best.score, sub: `${best.name} · wk ${best.best.week}` },
+  ].filter(Boolean)
+})
+const behind = r => seasonRows.value[0].total - r.total
 </script>
 
 <template>
   <div class="standings">
-    <section class="head">
-      <div class="seg" role="tablist" aria-label="Standings view">
-        <button role="tab" :aria-selected="mode === 'week'" :class="{ on: mode === 'week' }" @click="mode = 'week'">Week</button>
-        <button role="tab" :aria-selected="mode === 'season'" :class="{ on: mode === 'season' }" @click="mode = 'season'">Season</button>
-      </div>
-      <div v-if="mode === 'week'" class="stepper" aria-label="Choose week">
-        <button :disabled="week <= 1" aria-label="Previous week" @click="week--">‹</button>
-        <span>Week {{ week }}<i v-if="isLive" class="ldot" :title="`${g.live} live · ${g.final} of ${g.total} final`"></i><small v-else-if="week === currentWeek">now</small></span>
-        <button :disabled="week >= 18" aria-label="Next week" @click="week++">›</button>
-      </div>
-
-    </section>
-
     <p v-if="error" class="err">Couldn’t load the league: {{ error }}</p>
 
     <!-- ================= WEEK ================= -->
-    <template v-else-if="mode === 'week'">
-      <p v-if="!data" class="loading">Loading week {{ week }}…</p>
-      <template v-else>
-        <p v-if="!data.posted" class="empty">Week {{ week }}’s lines aren’t posted yet.</p>
-        <section v-else-if="!started" class="card prestart">
-          <h3>No games have kicked off yet</h3>
-          <ul class="inlist">
-            <li v-for="r in rows" :key="r.id" :class="{ me: r.me }" @click="emit('open', r.id)"><span class="ok">✓</span>{{ r.name }}</li>
-            <li v-for="n in data.noPicks" :key="n" class="missing"><span>·</span>{{ n }} <small>no picks yet</small></li>
-          </ul>
-        </section>
+    <section class="lg">
+      <header class="lg-head">
+        <div class="lg-title">
+          <h2>Week {{ week }}</h2>
+          <span v-if="statusText" :class="['lg-status', { live: isLive, final: weekOver }]">
+            <i v-if="isLive" class="ldot"></i>{{ statusText }}
+          </span>
+        </div>
+        <div class="stepper" aria-label="Choose week">
+          <button :disabled="week <= 1" aria-label="Previous week" @click="week--">‹</button>
+          <button :disabled="week >= 18" aria-label="Next week" @click="week++">›</button>
+        </div>
+      </header>
 
-        <section v-else class="table" role="table" aria-label="Week standings" :style="{ '--cols': cols.length }">
+      <p v-if="!data" class="loading">Loading week {{ week }}…</p>
+      <p v-else-if="!data.posted" class="empty">Week {{ week }}’s lines aren’t posted yet.</p>
+      <div v-else-if="!started" class="prestart">
+        <p class="pre-note">No games have kicked off yet. {{ rows.length }} of {{ rows.length + data.noPicks.length }} have picks in.</p>
+        <ul class="inlist">
+          <li v-for="r in rows" :key="r.id" :class="{ me: r.me }" @click="emit('open', r.id)"><span class="ok">✓</span>{{ r.name }}</li>
+          <li v-for="n in data.noPicks" :key="n" class="missing"><span>·</span>{{ n }} <small>no picks yet</small></li>
+        </ul>
+      </div>
+
+      <template v-else>
+        <dl v-if="weekTiles.length" class="tiles">
+          <div v-for="t in weekTiles" :key="t.label" :class="['tile', { me: t.me }]">
+            <dt>{{ t.label }}</dt>
+            <dd>{{ t.value }}<span v-if="t.crown" class="crown">👑</span></dd>
+            <span class="tile-sub">{{ t.sub }}</span>
+          </div>
+        </dl>
+        <div class="table" role="table" aria-label="Week standings" :style="{ '--cols': cols.length }">
           <div class="tr th" role="row">
             <span role="columnheader">#</span>
             <span role="columnheader">Player</span>
@@ -143,60 +184,91 @@ const ord = n => `${n}${['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) 
             <span v-for="c in cols" :key="c" :class="['num', 'val', { on: key === c, neg: r[c] < 0 }]">{{ r[c] ?? '—' }}</span>
           </button>
           <p v-if="data.noPicks.length" class="nopicks">No picks: {{ data.noPicks.join(', ') }}</p>
-        </section>
+        </div>
       </template>
-    </template>
+    </section>
 
     <!-- ================= SEASON ================= -->
-    <template v-else>
-      <p v-if="!season" class="loading">Adding up the season…</p>
-      <p v-else-if="!season.rows.length" class="empty">No scored weeks yet.</p>
-      <section v-else class="table season" role="table" aria-label="Season standings">
-        <div class="tr th" role="row">
-          <span role="columnheader">#</span>
-          <span role="columnheader">Player</span>
-          <span role="columnheader" class="num">Total</span>
-          <span role="columnheader" class="num avg">Avg</span>
-          <span role="columnheader" class="num wins" title="Weeks won (finished weeks)">Wins</span>
+    <section class="lg">
+      <header class="lg-head">
+        <div class="lg-title">
+          <h2>Season</h2>
+          <span v-if="season?.latestWeek" class="lg-status">Through week {{ season.latestWeek }}</span>
         </div>
-        <button v-for="r in season.rows" :key="r.id" type="button" role="row" :class="['tr', { me: r.me, first: r.rank === 1 }]" @click="emit('open', r.id)">
-          <span class="rank">{{ r.rank }}</span>
-          <span class="who">
-            <b>{{ r.name }}</b>
-            <small>
-              {{ r.record.wins }}–{{ r.record.losses }}<template v-if="r.record.pushes">–{{ r.record.pushes }}</template>
-              <template v-if="r.record.pct != null"> · {{ r.record.pct }}%</template>
-              · {{ r.weeksPlayed }} wk{{ r.weeksPlayed === 1 ? '' : 's' }}
-              <span class="mobile-only"> · avg {{ r.average }}</span>
-            </small>
-          </span>
-          <span class="num score">
-            <b :class="{ neg: r.total < 0 }">{{ r.total }}</b>
-            <small v-if="r.projected !== r.total" :class="['lv', r.projected > r.total ? 'pos' : 'neg']" title="If the games on now ended as they stand"><i class="ldot"></i>{{ r.projected }}</small>
-          </span>
-          <span class="num avg">{{ r.average }}</span>
-          <span class="num wins">{{ r.weeklyWins || '—' }}</span>
-        </button>
-      </section>
-    </template>
+      </header>
+
+      <p v-if="!season" class="loading">Adding up the season…</p>
+      <p v-else-if="!seasonRows.length" class="empty">No scored weeks yet.</p>
+      <template v-else>
+        <dl class="tiles">
+          <div v-for="t in seasonTiles" :key="t.label" :class="['tile', { me: t.me }]">
+            <dt>{{ t.label }}</dt>
+            <dd>{{ t.value }}</dd>
+            <span class="tile-sub">{{ t.sub }}</span>
+          </div>
+        </dl>
+        <div class="table season" role="table" aria-label="Season standings">
+          <div class="tr th" role="row">
+            <span role="columnheader">#</span>
+            <span role="columnheader">Player</span>
+            <span role="columnheader" class="num">Total</span>
+            <span role="columnheader" class="num avg">Avg</span>
+            <span role="columnheader" class="num wins" title="Weeks won (finished weeks)">Wins</span>
+          </div>
+          <button v-for="r in seasonRows" :key="r.id" type="button" role="row" :class="['tr', { me: r.me, first: r.rank === 1 }]" @click="emit('open', r.id)">
+            <span class="rank">
+              {{ r.rank }}
+              <i v-if="seasonMove(r) > 0" class="mv up" :title="`Up ${seasonMove(r)} since last week`">▲{{ seasonMove(r) }}</i>
+              <i v-else-if="seasonMove(r) < 0" class="mv down" :title="`Down ${-seasonMove(r)} since last week`">▼{{ -seasonMove(r) }}</i>
+            </span>
+            <span class="who">
+              <b>{{ r.name }}</b>
+              <small>
+                {{ r.record.wins }}–{{ r.record.losses }}<template v-if="r.record.pushes">–{{ r.record.pushes }}</template>
+                <template v-if="r.record.pct != null"> · {{ r.record.pct }}%</template>
+                <span class="mobile-only"> · avg {{ r.average }}</span>
+              </small>
+            </span>
+            <span class="num score">
+              <b :class="{ neg: r.total < 0 }">{{ r.total }}</b>
+              <small v-if="r.projected !== r.total" :class="['lv', r.projected > r.total ? 'pos' : 'neg']" title="If the games on now ended as they stand"><i class="ldot"></i>{{ r.projected }}</small>
+              <small v-else-if="behind(r)" class="back" :title="`${behind(r)} behind the leader`">−{{ behind(r) }}</small>
+            </span>
+            <span class="num avg">{{ r.average }}</span>
+            <span class="num wins">{{ r.weeklyWins || '—' }}</span>
+          </button>
+        </div>
+      </template>
+    </section>
   </div>
 </template>
 
 <style scoped>
-.standings { display: flex; flex-direction: column; gap: 12px; }
-.head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.seg { display: inline-flex; background: #e2e8f0; border-radius: 12px; padding: 3px; }
-.seg button { border: 0; background: none; padding: 7px 16px; border-radius: 9px; font-weight: 700; color: #475569; cursor: pointer; }
-.seg button.on { background: #fff; color: #0f172a; box-shadow: 0 1px 3px #0002; }
-.stepper { display: inline-flex; align-items: center; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
-.stepper button { width: 38px; height: 38px; border: 0; background: none; font-size: 1.3rem; cursor: pointer; color: #0f172a; }
+.standings { display: flex; flex-direction: column; gap: 16px; }
+
+/* one card per section: title, three highlight numbers, then the table */
+.lg { background: #fff; border-radius: 18px; box-shadow: 0 1px 2px #0000000d, 0 4px 14px #0000000a; overflow: hidden; }
+.lg-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 14px 12px 18px; }
+.lg-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.lg-title h2 { margin: 0; font-size: 1.25rem; font-weight: 800; letter-spacing: -.02em; color: #0f172a; text-transform: none; }
+.lg-status { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 999px; background: #f1f5f9; color: #475569; font-size: .7rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lg-status.live { background: #fee2e2; color: #b91c1c; }
+.lg-status.final { background: #0f172a; color: #fff; text-transform: uppercase; letter-spacing: .05em; }
+.stepper { display: inline-flex; flex: none; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
+.stepper button { width: 38px; height: 36px; border: 0; background: #fff; font-size: 1.3rem; cursor: pointer; color: #0f172a; }
+.stepper button + button { border-left: 1px solid #e2e8f0; }
 .stepper button:hover:not(:disabled) { background: #f1f5f9; }
 .stepper button:disabled { color: #cbd5e1; cursor: default; }
-.stepper span { min-width: 84px; text-align: center; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
-.stepper small { font-size: .6rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: #2563eb; }
+
+.tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 12px 14px; background: #fbfcfe; border-top: 1px solid #f1f5f9; }
+.tile { min-width: 0; background: #fff; border: 1px solid #eef2f7; border-radius: 14px; padding: 9px 11px; display: flex; flex-direction: column; gap: 3px; }
+.tile.me { border-color: #bfdbfe; background: #f5f9ff; }
+.tile dt { font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: #94a3b8; }
+.tile dd { margin: 0; font-size: 1.35rem; font-weight: 800; line-height: 1.1; letter-spacing: -.02em; color: #0f172a; font-variant-numeric: tabular-nums; }
+.tile-sub { font-size: .74rem; font-weight: 600; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* table: # | player | one column per number (Score, Live, Max, Live max) */
-.table { background: #fff; border-radius: 18px; box-shadow: 0 1px 2px #0000000d, 0 4px 14px #0000000a; overflow: hidden; }
+.table { border-top: 1px solid #f1f5f9; }
 .tr {
   display: grid; grid-template-columns: 40px minmax(0, 1fr) repeat(var(--cols, 1), 62px); align-items: center; gap: 0 4px;
   width: 100%; min-height: 56px; padding: 8px 14px 8px 12px; border: 0; border-top: 1px solid #f1f5f9; background: #fff; font: inherit; color: inherit; text-align: left;
@@ -234,6 +306,7 @@ button.tr:focus-visible { outline: 2px solid #93c5fd; outline-offset: -2px; }
 .score { font-weight: 800; font-size: 1.1rem; color: #0f172a; }
 .season .score { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
 .season .score small { font-size: .7rem; display: inline-flex; align-items: center; gap: 4px; }
+.season .score small.back { color: #94a3b8; font-weight: 600; }
 .avg, .wins { color: #475569; font-weight: 700; }
 .pos { color: #15803d; }
 .neg { color: #b91c1c; }
@@ -241,15 +314,15 @@ button.tr:focus-visible { outline: 2px solid #93c5fd; outline-offset: -2px; }
 .mobile-only { display: none; }
 .nopicks { margin: 0; padding: 10px 14px; border-top: 1px solid #f1f5f9; font-size: .76rem; color: #94a3b8; }
 
-.card { background: #fff; border-radius: 18px; padding: 16px 18px; box-shadow: 0 1px 2px #0000000d; }
-.card h3 { margin: 0; font-size: 1rem; }
-.inlist { list-style: none; padding: 0; margin: 12px 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.prestart { padding: 12px 14px 14px; border-top: 1px solid #f1f5f9; }
+.pre-note { margin: 0; font-size: .85rem; color: #64748b; }
+.inlist { list-style: none; padding: 0; margin: 10px 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
 .inlist li { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; background: #f8fafc; font-weight: 600; font-size: .88rem; cursor: pointer; }
 .inlist li.me { background: #eff6ff; }
 .inlist li.missing { color: #94a3b8; cursor: default; font-weight: 500; }
 .inlist small { font-size: .7rem; }
 .ok { color: #16a34a; font-weight: 800; }
-.loading, .empty { color: #64748b; text-align: center; padding: 34px 10px; }
+.loading, .empty { margin: 0; color: #64748b; text-align: center; padding: 28px 10px; border-top: 1px solid #f1f5f9; }
 .err { color: #b91c1c; }
 
 @media (max-width: 520px) {
@@ -259,6 +332,10 @@ button.tr:focus-visible { outline: 2px solid #93c5fd; outline-offset: -2px; }
   .mobile-only { display: inline; }
   .th { font-size: .56rem; letter-spacing: .03em; }
   .val { font-size: .92rem; } .val.on { font-size: 1rem; }
-  .seg button { padding: 7px 13px; }
+  .lg-head { padding: 12px 10px 10px 14px; }
+  .tiles { padding: 10px; gap: 6px; }
+  .tile { padding: 8px 9px; }
+  .tile dd { font-size: 1.15rem; }
+  .tile-sub { font-size: .68rem; }
 }
 </style>

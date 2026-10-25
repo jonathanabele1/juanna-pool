@@ -15,6 +15,12 @@
 ## Picking
 - Every game starts with no pick. Tap a team to pick it; tap it again to clear the pick. Points can only be
   set on a picked game.
+- While editing, each card has quick presets (10, 20, ★ LOY) next to the − / + stepper. Tapping a preset again
+  goes back to 2.
+- **Press and hold (or double-click) a team** for a small card with its season so far, from the weeks before this
+  one on your saved sheets: overall record, ATS, ATS as favorite/underdog (whichever it is in this game), your record
+  and net points picking them and fading them, and its last 5 ATS results. Holding doesn't change the pick. The next
+  tap anywhere closes it, and that tap doesn't press anything else.
 - A game with no pick is a skip (−20) only once it kicks off. Before that it's just open.
 
 ## Sending picks
@@ -44,11 +50,14 @@ Total, weekly average, record vs spread, best/worst week, points earned vs wager
 favorite/underdog and home/away tendencies, Lock of the Year result, biggest hit/miss, running total.
 
 ## The rest of the pool
-- **League** tab (third, after Season stats). *Week*: every player's score for the week, with a column each for Score, Live
+- **League** tab (third, after Season stats). One page: the week on top (‹ › to change weeks), the season below.
+  Each section opens with three highlights: week leader/winner, your place, pool average; season leader (and lead),
+  your place (and points back), best single week. *Week*: every player's score for the week, with a column each for Score, Live
   (if every game on now ended as it stands), Max and Live max (columns show only when they apply). Tap a header to sort
   by it, tap again to flip. While games are live it sorts by Live by default (with ▲/▼ for places gained or lost vs.
   the final games only) and refreshes every 30s.
-  *Season*: total, average, record, and weeks won (finished weeks only). Tap a player to open their page.
+  *Season*: total (with points behind the leader), average, record, weeks won (finished weeks only), and ▲/▼ for
+  places moved since the week before the latest one with results. Tap a player to open their page.
 - A player's page shows their picks week by week (read-only) and their season stats. **Another player's pick on a
   game stays hidden until that game kicks off**: the server never sends it, admins included.
 - Season stats has a "Viewing" picker to look at anyone's season.

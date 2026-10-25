@@ -125,7 +125,18 @@ def season_standings(me: dict = Depends(auth.current_user)):
     rows.sort(key=lambda r: (-r["total"], r["name"].lower()))
     for r, rank in zip(rows, _ranks(rows, "total")):
         r["rank"] = rank
-    return {"rows": rows}
+    # where everyone stood before the latest week with results: the table shows places moved since then
+    played = {n for weeks in per_user.values() for n, s in weeks if s["wins"] + s["losses"] + s["pushes"]}
+    if len(played) > 1:
+        latest = max(played)
+        for r in rows:
+            r["prevTotal"] = r["total"] - sum(s["score"] for n, s in per_user[r["id"]]
+                                              if n == latest and s["wins"] + s["losses"] + s["pushes"])
+        for r, rank in zip(rows, _ranks(rows, "prevTotal")):
+            r["lastRank"] = rank
+        for r in rows:
+            del r["prevTotal"]
+    return {"rows": rows, "latestWeek": max(played) if played else None}
 
 
 @router.get("/weeks/{n}/pool")

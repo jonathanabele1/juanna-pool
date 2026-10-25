@@ -99,6 +99,7 @@ class Teams(unittest.TestCase):
         self.assertEqual((rows["ATL"]["fading"]["l"], rows["ATL"]["fading"]["net"]), (1, -20))
         self.assertEqual(rows["ATL"]["su"]["w"], 1)
         self.assertEqual(rows["BUF"]["asFav"]["w"], 1)
+        self.assertEqual((rows["BUF"]["form"], rows["ATL"]["form"]), (["win"], ["win"]))
 
     def test_before_week_filter(self):
         w = {"week": 4, "games": [dict(game("1", "BUF", 6.5, "fav", 10), dogAbbr="NE")]}

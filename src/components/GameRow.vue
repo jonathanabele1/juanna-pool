@@ -1,13 +1,16 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, nextTick, onUnmounted, ref } from 'vue'
 import TeamCard from './TeamCard.vue'
+import TeamPeek from './TeamPeek.vue'
 import PoolBar from './PoolBar.vue'
 import PoolDialog from './PoolDialog.vue'
 import { coverNow, resolveGame } from '../lines.js'
 import { clampPoints, stepPoints, MIN_PTS, MAX_PTS } from '../points.js'
+import { openOne, closeOpen } from '../dismiss.js'
 
 const props = defineProps({
-  game: Object, events: Array, now: Object, result: Object, ats: Object,
+  game: Object, events: Array, now: Object, result: Object,
+  teams: Object,      // your per-team stats by abbr (weeks before this one): ATS on the card, hold a team for more
   editing: Boolean,   // "fix names" inputs
   readonly: Boolean,  // view mode: nothing can be changed
   showDay: Boolean,   // flat (sorted) lists don't have day headings, so show the day on the card
@@ -88,7 +91,35 @@ const finalText = computed(() => (/OT/.test(ev.value?.detail || '') ? 'Final · 
 const sideAbbr = key => (key === 'fav' ? r.value.favTeam : r.value.dogTeam)?.abbr
 const pickedName = computed(() => (g.value.pick === 'fav' ? r.value.favTeam : r.value.dogTeam)?.name || g.value[g.value.pick])
 // tap a team to pick it, tap it again to clear the pick
-function choose(key) { g.value.pick = g.value.pick === key ? null : key }
+let lastChoice = null   // so a double-click (to see the team's stats) can undo its two taps
+function choose(key) {
+  lastChoice = { pick: g.value.pick, at: Date.now() }
+  g.value.pick = g.value.pick === key ? null : key
+}
+
+// ---- press and hold (or double-click) a team: its season so far, under the card. Any tap closes it. ----
+const PEEK_W = 264
+const articleEl = ref(null)
+const cardRefs = []   // the TeamCards, in sides order
+const peek = ref(null)   // { key, left, top, arrow, above } (px, inside the card)
+const closePeek = () => { peek.value = null }
+async function openPeek(i, key, opts) {
+  if (opts?.undo && lastChoice && Date.now() - lastChoice.at < 800) g.value.pick = lastChoice.pick
+  lastChoice = null
+  const box = articleEl.value.getBoundingClientRect(), c = cardRefs[i].$el.getBoundingClientRect()
+  const w = Math.min(PEEK_W, box.width)
+  const center = c.left + c.width / 2 - box.left
+  const left = Math.max(0, Math.min(box.width - w, center - w / 2))
+  peek.value = { key, left, arrow: center - left, top: c.bottom - box.top + 10, above: false }
+  openOne(closePeek)
+  await nextTick()
+  // no room under the team (the edit bar docks at the bottom): open above it
+  const h = articleEl.value?.querySelector('.tpeek')?.offsetHeight || 0
+  const bar = document.querySelector('.totalbar')?.offsetHeight || 0
+  if (peek.value && c.bottom + 10 + h > innerHeight - bar && c.top - 10 - h > 0) peek.value = { ...peek.value, above: true, top: c.top - box.top - 10 - h }
+}
+onUnmounted(() => closeOpen(closePeek))
+const peekSide = computed(() => peek.value && sides.value.find(s => s.key === peek.value.key))
 
 const pts = computed({
   get: () => g.value.points,
@@ -97,8 +128,9 @@ const pts = computed({
 function bump(d) { g.value.points = stepPoints(g.value.points, d) }
 const isLoy = computed(() => Number(g.value.points) === 50)
 function toggleLoy() { g.value.points = isLoy.value ? MIN_PTS : 50 }
-const isMax = computed(() => Number(g.value.points) === MAX_PTS)
-function toggleMax() { g.value.points = isMax.value ? MIN_PTS : MAX_PTS }
+// quick presets: tap to set, tap again to go back to the minimum
+const PRESETS = [10, MAX_PTS]
+function togglePreset(n) { g.value.points = Number(g.value.points) === n ? MIN_PTS : n }
 const deltaText = d => (d > 0 ? `▲ +${d}` : `▼ ${d}`)
 
 // ---- the pool + public betting on this game ----
@@ -112,7 +144,7 @@ const poolStatus = computed(() => (final.value ? finalText.value : live.value ? 
 </script>
 
 <template>
-  <article :class="['game', { nopick: !g.pick && !g.hidden, ro: readonly, live, final }, outcome && `is-${outcome}`, liveStatus && `live-${liveStatus}`]">
+  <article ref="articleEl" :class="['game', { nopick: !g.pick && !g.hidden, ro: readonly, live, final }, outcome && `is-${outcome}`, liveStatus && `live-${liveStatus}`]">
     <header class="meta">
       <span v-if="showDay" class="pill day">{{ dayText }}</span>
       <span v-if="final" class="pill final">{{ finalText }}</span>
@@ -159,19 +191,31 @@ const poolStatus = computed(() => (final.value ? finalText.value : live.value ? 
         :editing="editing"
         :readonly="readonly"
         :no-line="noLine"
-        :ats="ats?.[s.team?.abbr]"
+        :ats="teams?.[s.team?.abbr]?.ats"
+        :peekable="!!teams && !!s.team && !editing"
         :score="scoreFor(s.key)"
         :outcome="g.pick === s.key ? outcome : null"
         :live="g.pick === s.key ? liveStatus : null"
         :possession="live && !!info?.possession && info.possession === sideAbbr(s.key)"
         :trailing="!!leader && leader !== s.key"
         :points="g.pick === s.key ? g.points : null"
+        :ref="el => (cardRefs[i] = el)"
         @select="choose(s.key)"
+        @peek="openPeek(i, s.key, $event)"
         @update:raw="g[s.key] = $event"
         :style="{ gridColumn: i === 0 ? 1 : 3 }"
       />
       <span class="at">@</span>
     </div>
+    <TeamPeek
+      v-if="peekSide"
+      :class="{ above: peek.above }"
+      :style="{ left: peek.left + 'px', top: peek.top + 'px', '--arrow': peek.arrow + 'px' }"
+      :team="peekSide.team"
+      :raw="g[peekSide.key]"
+      :role="peekSide.role"
+      :stats="teams?.[peekSide.team?.abbr] || null"
+    />
 
     <p v-if="live && (info?.down || info?.lastPlay)" class="situation">
       <span v-if="info.down" :class="['down', { rz: info.redZone }]">
@@ -200,16 +244,10 @@ const poolStatus = computed(() => (final.value ? finalText.value : live.value ? 
     />
 
     <footer v-if="!readonly" :class="['foot', { fixing: editing }]">
-      <span class="picked">
-        <template v-if="g.pick"><span class="pk-word">Picking </span><b>{{ pickedName }}</b></template>
-        <template v-else>Tap a team</template>
-        <small v-if="editing">
-          · <button class="link" @click="g.favHome = !r.favHome">swap home/away</button>
-        </small>
-      </span>
-      <span class="spacer"></span>
-      <button class="loy max" :class="{ on: isMax }" :disabled="!g.pick" @click="toggleMax" :aria-label="`Set to ${MAX_PTS} points`">{{ MAX_PTS }}</button>
+      <button v-if="editing" class="link" @click="g.favHome = !r.favHome">swap home/away</button>
+      <button v-for="n in PRESETS" :key="n" class="loy max" :class="{ on: Number(g.points) === n }" :disabled="!g.pick" @click="togglePreset(n)" :aria-label="`Set to ${n} points`">{{ n }}</button>
       <button class="loy" :class="{ on: isLoy }" :disabled="!g.pick" @click="toggleLoy" title="Lock of the Year (50 points, once a season)">★ LOY</button>
+      <span class="spacer"></span>
       <div :class="['stepper', { off: !g.pick }]" :title="g.pick ? '' : 'Pick a team first'">
         <button aria-label="Decrease points" :disabled="!g.pick || g.points <= MIN_PTS" @click="bump(-1)">−</button>
         <input type="number" inputmode="numeric" :min="MIN_PTS" :max="MAX_PTS" v-model.number="pts" :disabled="!g.pick" @focus="$event.target.select()" @change="pts = clampPoints(pts)" aria-label="Points" />
@@ -239,7 +277,7 @@ const poolStatus = computed(() => (final.value ? finalText.value : live.value ? 
 .edit-btn:focus-visible { outline: 2px solid #93c5fd; outline-offset: 1px; }
 .edit-btn svg { width: 12px; height: 12px; }
 .pill.pastdue { background: #fef3c7; color: #92400e; }
-.game { background: #fff; border-radius: 18px; padding: 12px; box-shadow: 0 1px 2px #0000000d, 0 4px 14px #0000000a; transition: opacity .15s; }
+.game { position: relative; background: #fff; border-radius: 18px; padding: 12px; box-shadow: 0 1px 2px #0000000d, 0 4px 14px #0000000a; transition: opacity .15s; }
 .game.nopick.ro { opacity: .6; }
 .stepper.off, .loy:disabled { opacity: .45; }
 .stepper.off button, .loy:disabled { cursor: not-allowed; }
@@ -319,12 +357,16 @@ const poolStatus = computed(() => (final.value ? finalText.value : live.value ? 
 
 @media (max-width: 520px) {
   .result { gap: 6px; padding: 0 10px; }
-  .pk-word { display: none; }
   .stepper button { width: 36px; }
   .stepper input { width: 44px; }
   .matchup { grid-template-columns: 1fr; gap: 6px; }
   .matchup > :deep(.team) { grid-column: 1 !important; }
   .at { display: none; }
 }
-@media (max-width: 380px) { .meta .r-of { display: none; } }
+@media (max-width: 380px) {
+  .meta .r-of { display: none; }
+  .foot { gap: 6px; }
+  .loy { padding: 0 8px; }
+  .loy.max { min-width: 36px; }
+}
 </style>

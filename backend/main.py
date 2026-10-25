@@ -136,10 +136,11 @@ def stats(user: dict = Depends(auth.current_user)):
 
 @app.get("/api/teams")
 def team_covers(before_week: int | None = None, user: dict = Depends(auth.current_user)):
-    """Compact cover (ATS) record per team from your saved sheets, optionally only weeks before `before_week`."""
+    """Per-team stats from your saved sheets (cover record, recent form, your record backing/fading them),
+    optionally only weeks before `before_week`."""
     weeks_ = [{"week": w["week"], "games": g} for w, g, _ in user_weeks(user["id"])]
     rows = scoring.team_stats(weeks_, db.get_results(), {}, before_week)
-    return {r["abbr"]: r["ats"] for r in rows}
+    return {r["abbr"]: r for r in rows}
 
 
 # ---- the built Vue app (npm run build) ----

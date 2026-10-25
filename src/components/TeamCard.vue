@@ -19,8 +19,28 @@ const props = defineProps({
   possession: Boolean,   // this team has the ball
   trailing: Boolean,     // final, and this team lost
   points: [Number, String], // points wagered (picked card only)
+  peekable: Boolean,     // press and hold (or double-click) shows the team's season stats
 })
-defineEmits(['select', 'update:raw'])
+const emit = defineEmits(['select', 'update:raw', 'peek'])
+
+// press and hold (or double-click): 'peek'. A hold doesn't also pick; GameRow undoes a double-click's two picks.
+const HOLD_MS = 450
+let holdTimer = null, holdFrom = null, held = false
+function onDown(e) {
+  held = false
+  if (!props.peekable || e.button > 0) return
+  holdFrom = [e.clientX, e.clientY]
+  clearTimeout(holdTimer)
+  holdTimer = setTimeout(() => { held = true; holdFrom = null; navigator.vibrate?.(8); emit('peek') }, HOLD_MS)
+}
+function onMove(e) { if (holdFrom && Math.hypot(e.clientX - holdFrom[0], e.clientY - holdFrom[1]) > 10) endHold() }  // scrolling
+function endHold() { clearTimeout(holdTimer); holdFrom = null }
+function onClick(e) {
+  if (held) { held = false; return }
+  if (props.readonly || e.detail > 1) return   // a double-click's second click: dblclick handles it
+  emit('select')
+}
+function onDbl() { if (props.peekable) emit('peek', { undo: true }) }
 
 const broken = ref(false)
 const OUTCOME_COLOR = { win: '#16a34a', loss: '#dc2626', push: '#64748b' }
@@ -56,12 +76,19 @@ const atsText = computed(() => {
 <template>
   <button
     type="button"
-    :class="['team', role, outcome, { selected, dimmed, pickem, static: readonly }]"
+    :class="['team', role, outcome, { selected, dimmed, pickem, static: readonly, peekable }]"
     :style="{ '--accent': accent }"
     :aria-pressed="selected"
     :aria-label="`Pick ${team ? team.location + ' ' + team.name : raw}, ${roleText} ${spreadText}`"
     :tabindex="readonly ? -1 : 0"
-    @click="!readonly && $emit('select')"
+    @click="onClick"
+    @dblclick="onDbl"
+    @pointerdown="onDown"
+    @pointermove="onMove"
+    @pointerup="endHold"
+    @pointercancel="endHold"
+    @pointerleave="endHold"
+    @contextmenu="peekable && $event.preventDefault()"
   >
     <span class="strip">
       <span class="role">{{ roleText }}</span>
@@ -69,7 +96,7 @@ const atsText = computed(() => {
     </span>
 
     <span class="body">
-      <img v-if="team?.logo && !broken" :src="team.logo" :alt="team.abbr" class="logo" @error="broken = true" />
+      <img v-if="team?.logo && !broken" :src="team.logo" :alt="team.abbr" class="logo" draggable="false" @error="broken = true" />
       <span v-else class="logo fallback">{{ (raw || '?').slice(0, 2).toUpperCase() }}</span>
       <span class="names">
         <span class="city">
@@ -113,6 +140,8 @@ const atsText = computed(() => {
   background: #fff; border: 2px solid #e5e7eb; border-radius: 14px; cursor: pointer;
   font: inherit; color: inherit; transition: border-color .15s, box-shadow .15s, transform .08s, opacity .15s, background .15s;
 }
+/* press and hold opens the team's stats: no text selection or iOS callout while holding */
+.team.peekable { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: manipulation; }
 .team:hover { border-color: #cbd5e1; box-shadow: 0 2px 8px #0000000f; }
 .team:active { transform: scale(.985); }
 .team:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
