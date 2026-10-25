@@ -18,6 +18,7 @@ const props = defineProps({
   live: String,          // 'win' | 'loss' | 'push': picked card while the game is on, covering or not
   possession: Boolean,   // this team has the ball
   trailing: Boolean,     // final, and this team lost
+  points: [Number, String], // points wagered (picked card only)
 })
 defineEmits(['select', 'update:raw'])
 
@@ -32,6 +33,20 @@ const roleText = computed(() => (props.noLine ? 'NO LINE YET' : pickem.value ? "
 const city = computed(() => props.team?.location || '')
 const nick = computed(() => props.team?.name || props.raw?.toUpperCase())
 const dash = s => s?.replace(/-/g, '–')
+// the wager chip: a solid disc in team colors (gold for the Lock of the Year) on the team you backed,
+// until the game starts; then the result takes over
+const wager = computed(() => Number(props.points) || 0)
+const isLoy = computed(() => wager.value === 50)
+const chipColor = computed(() => (isLoy.value ? '#eab308' : props.team?.color ? `#${props.team.color}` : '#334155'))
+// dark text on light team colors (e.g. Saints gold), white on the rest
+const chipInk = computed(() => {
+  const h = chipColor.value.slice(1)
+  const [r, g, b] = [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16))
+  return isLoy.value || 0.299 * r + 0.587 * g + 0.114 * b > 170 ? '#0f172a' : '#fff'
+})
+const showChip = computed(() => props.selected && !props.editing && wager.value > 0 && props.score == null && !props.outcome && !props.live)
+const mark = computed(() => (props.outcome === 'loss' ? '✗' : props.outcome === 'push' ? '=' : props.live === 'loss' ? '!' : '✓'))
+
 const atsText = computed(() => {
   const a = props.ats
   return a && a.w + a.l + a.p ? `${a.w}–${a.l}${a.p ? `–${a.p}` : ''}` : null
@@ -68,7 +83,17 @@ const atsText = computed(() => {
         </span>
       </span>
       <span v-if="score != null" :class="['score', { trailing }]">{{ score }}</span>
-      <span v-if="selected && !editing" :class="['check', { end: score == null }]" aria-hidden="true">{{ outcome === 'loss' ? '✗' : outcome === 'push' ? '=' : live === 'loss' ? '!' : '✓' }}</span>
+      <span
+        v-if="showChip"
+        :class="['chip', { loy: isLoy }]"
+        :style="{ '--chip': chipColor, '--ink': chipInk }"
+        :title="`${wager} points on ${nick}`"
+      >
+        <i v-if="isLoy" class="star" aria-hidden="true">★</i>
+        <b :key="wager">{{ wager }}</b>
+        <small>{{ isLoy ? 'LOY' : 'PTS' }}</small>
+      </span>
+      <span v-else-if="selected && !editing" :class="['check', { end: score == null }]" aria-hidden="true">{{ mark }}</span>
     </span>
 
     <input
@@ -134,5 +159,20 @@ const atsText = computed(() => {
   display: grid; place-items: center; background: var(--accent); color: #fff; font-size: .8rem; font-weight: 800;
 }
 .check.end { margin-left: auto; }
+/* wager chip: the points you put on this team, before kickoff */
+.chip {
+  flex: none; margin-left: auto; width: 50px; height: 50px; border-radius: 50%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1;
+  background: var(--chip); color: var(--ink);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--ink) 22%, transparent), 0 3px 8px #0f172a2e;
+  animation: chip-drop .38s cubic-bezier(.2, 1.4, .4, 1) both;
+}
+.chip b { font-size: 1.4rem; font-weight: 900; font-variant-numeric: tabular-nums; letter-spacing: -.03em; animation: chip-pop .3s ease-out; }
+.chip small { font-size: .52rem; font-weight: 800; letter-spacing: .1em; opacity: .8; margin-top: 2px; }
+.chip.loy { background: linear-gradient(160deg, #fde047, #eab308); box-shadow: 0 0 0 3px #fde04766, 0 3px 10px #ca8a0466; }
+.chip .star { font-style: normal; font-size: .55rem; margin-bottom: 1px; }
+@keyframes chip-drop { from { transform: translateY(-14px) scale(1.25); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes chip-pop { 0% { transform: scale(1.35); } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .chip, .chip b { animation: none; } }
 .raw { font: inherit; font-size: .8rem; padding: 4px 6px; margin: 0 12px 10px; border: 1px dashed #94a3b8; border-radius: 6px; width: calc(100% - 24px); box-sizing: border-box; }
 </style>

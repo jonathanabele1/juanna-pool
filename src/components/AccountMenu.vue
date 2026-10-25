@@ -1,6 +1,9 @@
 <script setup>
 import { ref } from 'vue'
 import { changePassword, logout } from '../api.js'
+import { MAIL_APPS } from '../mail.js'
+import { mailPrefs, loadMailPrefs } from '../mailPrefs.js'
+import MailSettingsDialog from './MailSettingsDialog.vue'
 
 defineProps({ user: Object, adminMode: Boolean, demoLive: Boolean })
 const emit = defineEmits(['logout', 'demo'])
@@ -11,6 +14,8 @@ const current = ref('')
 const next = ref('')
 const msg = ref('')
 const err = ref('')
+const mailOpen = ref(false)
+const mailLabel = () => MAIL_APPS.find(a => a.id === mailPrefs.app)?.label || 'Not set'
 
 async function savePassword() {
   msg.value = ''; err.value = ''
@@ -28,13 +33,16 @@ async function doLogout() {
 
 <template>
   <div class="acct">
-    <button class="btn ghost who" @click="open = !open" :aria-expanded="open">
+    <button class="btn ghost who" @click="open = !open; loadMailPrefs()" :aria-expanded="open">
       {{ user.displayName }}<span v-if="adminMode" class="adm">admin</span> ▾
     </button>
     <div v-if="open" class="menu">
       <button v-if="adminMode" class="item demo" role="switch" :aria-checked="demoLive" @click="emit('demo', !demoLive); open = false">
         <span>🧪 Test live mode<small>Fake scores, only you see them</small></span>
         <b :class="{ on: demoLive }">{{ demoLive ? 'On' : 'Off' }}</b>
+      </button>
+      <button class="item mail" @click="mailOpen = true; open = false">
+        <span>✉ Email settings<small>Send picks with: {{ mailLabel() }}</small></span>
       </button>
       <button class="item" @click="pwOpen = !pwOpen">Change password</button>
       <form v-if="pwOpen" class="pw" @submit.prevent="savePassword">
@@ -46,6 +54,7 @@ async function doLogout() {
       </form>
       <button class="item" @click="doLogout">Log out</button>
     </div>
+    <MailSettingsDialog v-if="mailOpen" @close="mailOpen = false" />
   </div>
 </template>
 
@@ -57,8 +66,8 @@ async function doLogout() {
 .item { text-align: left; border: 0; background: none; padding: 9px 10px; border-radius: 9px; cursor: pointer; color: #334155; }
 .item:hover { background: #f1f5f9; }
 .item.demo { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.item.demo span { display: flex; flex-direction: column; }
-.item.demo small { font-size: .72rem; color: #94a3b8; }
+.item.demo span, .item.mail span { display: flex; flex-direction: column; }
+.item.demo small, .item.mail small { font-size: .72rem; color: #94a3b8; }
 .item.demo b { font-size: .7rem; padding: 2px 8px; border-radius: 99px; background: #f1f5f9; color: #64748b; }
 .item.demo b.on { background: #7c3aed; color: #fff; }
 .pw { display: flex; flex-direction: column; gap: 6px; padding: 4px 10px 10px; }

@@ -88,6 +88,8 @@ def score_week(week: dict, results: dict) -> dict:
         "live": {"wins": live("win"), "losses": live("loss"), "pushes": live("push"), "points": live_pts},
         "ifEndedNow": score + live_pts,
         "maxScore": score + sum(g["points"] for g in picked if g["outcome"] == "pending"),
+        # live max: live games end as they stand, every game not started yet covers
+        "liveMax": score + live_pts + sum(g["points"] for g in picked if g["outcome"] == "pending" and not g.get("live")),
         "open": open_,
         "complete": bool(picked) and count("pending") == 0 and open_ == 0,
         "_picked": picked,

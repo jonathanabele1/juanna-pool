@@ -8,7 +8,7 @@
     "api": "python3 -m uvicorn backend.main:app --port 8000",
     "start": "npm run api & vite",
     "build": "vite build",
-    "test": "node --test src/parse.test.js"
+    "test": "node --test src/parse.test.js src/mail.test.js"
   },
   "dependencies": {
     "tesseract.js": "^5.1.1",

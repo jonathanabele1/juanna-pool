@@ -102,6 +102,18 @@ async function doReset(u) {
   resetFor.value = null; resetPw.value = ''
 }
 
+// ---------------- league email addresses (a different one each week) ----------------
+const SEASON_WEEKS = 18
+const leagueEmails = reactive({})
+async function saveLeagueEmails() {
+  try {
+    const saved = await admin.setLeagueEmails(Object.fromEntries(
+      Array.from({ length: SEASON_WEEKS }, (_, i) => [i + 1, (leagueEmails[i + 1] || '').trim()])))
+    for (let n = 1; n <= SEASON_WEEKS; n++) leagueEmails[n] = saved[n] || ''
+    flash(notes, 'emails', 'Saved')
+  } catch (e) { flash(notes, 'emails', e.message) }
+}
+
 // ---------------- announcement + backup ----------------
 const announcement = ref('')
 async function saveAnnouncement() {
@@ -127,6 +139,7 @@ onMounted(() => {
   loadUsers()
   admin.signup().then(c => Object.assign(signupCfg, c)).catch(() => {})
   getAnnouncement().then(a => (announcement.value = a.text)).catch(() => {})
+  admin.leagueEmails().then(e => Object.assign(leagueEmails, e)).catch(() => {})
 })
 </script>
 
@@ -259,6 +272,19 @@ onMounted(() => {
       </ul>
     </section>
 
+    <!-- ============ LEAGUE EMAILS ============ -->
+    <section class="card">
+      <h3>League email addresses</h3>
+      <p class="muted">Where each week’s picks go. Players’ <b>Send picks</b> button opens an email to that week’s address.</p>
+      <form class="emails" @submit.prevent="saveLeagueEmails">
+        <label v-for="n in SEASON_WEEKS" :key="n" :class="{ now: n === currentWeek }">
+          <span>Week {{ n }}</span>
+          <input v-model="leagueEmails[n]" type="email" inputmode="email" autocapitalize="none" placeholder="name@example.com" />
+        </label>
+        <div class="row"><button class="btn primary sm">Save</button> <small class="note">{{ notes.emails }}</small></div>
+      </form>
+    </section>
+
     <!-- ============ ANNOUNCEMENT ============ -->
     <section class="card">
       <h3>Announcement</h3>
@@ -340,4 +366,10 @@ li.hidden .u-who b { color: #64748b; }
 .ok { color: #15803d; font-size: .85rem; }
 .err { color: #b91c1c; font-size: .85rem; }
 a.btn { display: inline-block; text-decoration: none; }
+.emails { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 14px; }
+.emails label { display: flex; align-items: center; gap: 8px; font-size: .85rem; color: #334155; }
+.emails label span { width: 58px; flex: none; }
+.emails label.now span { font-weight: 700; color: #2563eb; }
+.emails input { flex: 1; min-width: 0; font-size: 1rem; }
+.emails .row { grid-column: 1 / -1; }
 </style>

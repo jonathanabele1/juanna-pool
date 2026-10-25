@@ -44,6 +44,7 @@ class Scoring(unittest.TestCase):
         self.assertEqual(s["live"], {"wins": 1, "losses": 1, "pushes": 1, "points": 20 + 3})  # live push: half of 6
         self.assertEqual(s["ifEndedNow"], 10 + 20 + 3)
         self.assertEqual(s["maxScore"], 10 + 20 + 5 + 6 + 2)
+        self.assertEqual(s["liveMax"], 10 + 20 + 3 + 2)
 
     def test_penalties_and_adjustment(self):
         gs = [game("1", "BUF", 6.5, "fav", 25 if False else 20) for _ in range(4)]  # 4 double-digit, total 80

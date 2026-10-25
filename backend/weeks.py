@@ -62,7 +62,7 @@ def user_week(user_id: int, n: int) -> dict:
     p = db.get_picks(user_id, n)
     info = deadline_info(n, w)
     base = {"week": n, "hasImage": bool(w and w["hasImage"]), "imageVersion": w["updatedAt"] if w else None,
-            "deadlines": info["groups"]}
+            "deadlines": info["groups"], "leagueEmail": db.league_emails().get(n, "")}
     if not w or not w["games"]:
         return {**base, "saved": False, "picksSaved": False}
     games = merge(w["games"], p, info)

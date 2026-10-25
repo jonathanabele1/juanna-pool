@@ -98,7 +98,7 @@ const poolTop = computed(() => {
   <article :class="['tile', { nopick: !g.pick && !g.hidden, ro: readonly, live, final }, outcome && `is-${outcome}`, liveStatus && `live-${liveStatus}`]">
     <header class="t-meta">
       <span :class="['when', { on: live }]"><i v-if="live" class="ldot"></i>{{ when }}</span>
-      <span v-if="!live && !final && now?.changed" :class="['moved', { flipped: now.flipped }]" :title="now.title">DK {{ now.text }}</span>
+      <span v-if="!live && !final && now?.changed" :class="['moved', { flipped: now.flipped }]" :title="now.title">DraftKings {{ now.text }}</span>
       <span v-else-if="!live && !final && started" class="moved">Started</span>
     </header>
 

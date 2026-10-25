@@ -29,6 +29,9 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   active INTEGER NOT NULL DEFAULT 1,
   hidden INTEGER NOT NULL DEFAULT 0,  -- left out of the league (standings, pool, player list): test accounts
+  mail_app TEXT NOT NULL DEFAULT '',  -- how "Send picks" opens their email: gmail / outlook / default
+  mail_from TEXT NOT NULL DEFAULT '', -- their Gmail address, so desktop Gmail opens the right account
+  team_name TEXT NOT NULL DEFAULT '', -- their pool team name, for the picks email
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 -- a user is an admin when they have a row here
@@ -136,6 +139,9 @@ def init() -> None:
             c.execute("ALTER TABLE users DROP COLUMN is_admin")
         if "hidden" not in _columns(c, "users"):
             c.execute("ALTER TABLE users ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
+        for col in ("mail_app", "mail_from", "team_name"):
+            if col not in _columns(c, "users"):
+                c.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
         if "kickoff" not in _columns(c, "results"):
             c.execute("ALTER TABLE results ADD COLUMN kickoff TEXT")
 
@@ -205,6 +211,19 @@ def update_user(user_id: int, is_admin: bool | None = None, **fields) -> dict | 
         elif is_admin is False:
             c.execute("DELETE FROM admins WHERE user_id=?", (user_id,))
         return _user_row(c.execute(f"{USER_SQL} WHERE u.id=?", (user_id,)).fetchone())
+
+
+def get_mail_prefs(user_id: int) -> dict:
+    """Kept out of _user_row: user rows go to other players, and these are only for the user themselves."""
+    with conn() as c:
+        r = c.execute("SELECT mail_app, mail_from, team_name FROM users WHERE id=?", (user_id,)).fetchone()
+    return ({"app": r["mail_app"], "sender": r["mail_from"], "teamName": r["team_name"]} if r
+            else {"app": "", "sender": "", "teamName": ""})
+
+
+def set_mail_prefs(user_id: int, app: str, sender: str, team_name: str) -> None:
+    with conn() as c:
+        c.execute("UPDATE users SET mail_app=?, mail_from=?, team_name=? WHERE id=?", (app, sender, team_name, user_id))
 
 
 def delete_user(user_id: int) -> None:
@@ -394,6 +413,15 @@ def get_setting(key: str, default: str = "") -> str:
 def set_setting(key: str, value: str) -> None:
     with conn() as c:
         c.execute("INSERT INTO settings VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
+
+
+def league_emails() -> dict[int, str]:
+    """Where each week's picks email goes (the league's address changes week to week): week -> address."""
+    return {int(k): v for k, v in json.loads(get_setting("league_emails", "{}")).items()}
+
+
+def set_league_emails(by_week: dict[int, str]) -> None:
+    set_setting("league_emails", json.dumps({str(k): v for k, v in sorted(by_week.items()) if v}))
 
 
 # ---------------- ESPN cache ----------------

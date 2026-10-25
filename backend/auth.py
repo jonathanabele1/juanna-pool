@@ -12,9 +12,10 @@ import sqlite3
 import time
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from . import db
 
@@ -50,6 +51,13 @@ def validate_username(username: str) -> str:
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._'-]{1,29}", name):
         raise HTTPException(400, "Username must be 2–30 letters, numbers or spaces")
     return name
+
+
+def validate_email(address: str) -> str:
+    address = address.strip()
+    if len(address) > 254 or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", address):
+        raise HTTPException(400, f"“{address}” doesn't look like an email address")
+    return address
 
 
 def bootstrap_admin() -> None:
@@ -101,6 +109,12 @@ class SignupIn(BaseModel):
     username: str
     password: str
     code: str = ""
+
+
+class MailIn(BaseModel):
+    app: Literal["", "gmail", "outlook", "default"] = ""
+    sender: str = ""
+    teamName: str = Field("", max_length=60)
 
 
 class PasswordIn(BaseModel):
@@ -180,3 +194,15 @@ def change_password(body: PasswordIn, request: Request, user: dict = Depends(cur
     db.update_user(user["id"], password_hash=hash_password(body.new))
     db.delete_user_sessions(user["id"], keep=_token_hash(request.cookies.get(COOKIE, "")))  # sign out other devices
     return {"ok": True}
+
+
+@router.get("/mail")
+def get_mail(user: dict = Depends(current_user)):
+    return db.get_mail_prefs(user["id"])
+
+
+@router.put("/mail")
+def set_mail(body: MailIn, user: dict = Depends(current_user)):
+    sender = validate_email(body.sender) if body.sender.strip() else ""
+    db.set_mail_prefs(user["id"], body.app, sender, " ".join(body.teamName.split()))
+    return db.get_mail_prefs(user["id"])

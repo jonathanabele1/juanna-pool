@@ -74,7 +74,7 @@ def week_standings(n: int, me: dict = Depends(auth.current_user)):
         s = e["score"]
         rows.append({
             "id": e["user"]["id"], "name": e["user"]["displayName"], "me": e["user"]["id"] == me["id"],
-            "score": s["score"], "projected": s["ifEndedNow"], "max": s["maxScore"],
+            "score": s["score"], "projected": s["ifEndedNow"], "max": s["maxScore"], "liveMax": s["liveMax"],
             "wins": s["wins"], "losses": s["losses"], "pushes": s["pushes"],
             "live": s["live"], "pending": s["pending"], "complete": s["complete"],
             "penalties": s["penaltyTotal"], "adjustment": s["adjustment"],

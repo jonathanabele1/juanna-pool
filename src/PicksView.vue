@@ -3,10 +3,13 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { parseSpreads, parseWeek } from './parse.js'
 import { currentLine, resolveGame } from './lines.js'
 import { getLines, getWeek, saveWeek, deleteWeek, uploadImage, getTeamCovers, getPool, getSplits } from './api.js'
+import { MAIL_APPS, openMail, platform } from './mail.js'
+import { mailPrefs, loadMailPrefs } from './mailPrefs.js'
 import { gameKey, poolByKey } from './pool.js'
 import GameRow from './components/GameRow.vue'
 import GameTile from './components/GameTile.vue'
 import UploadDialog from './components/UploadDialog.vue'
+import MailSettingsDialog from './components/MailSettingsDialog.vue'
 import ScheduleList from './components/ScheduleList.vue'
 import { gamesFromEvents, groupByKickoff } from './schedule.js'
 import { SAMPLE } from './sample.js'
@@ -24,32 +27,25 @@ const pendingFile = ref(null)   // newly uploaded image, persisted on save
 const status = ref('')
 const busy = ref(false)
 const games = ref([])
-const teamName = ref(saved('teamName', ''))
-const label = ref('')
-const labelTouched = ref(false)
 const adjustment = ref(0)
 const adjNote = ref('')
-const copied = ref(false)
 const fixNames = ref(false)
 const uploadOpen = ref(false)
 const scored = ref(null)        // server-side scoring of the saved picks
 const snapshot = ref('')
 const saving = ref(false)
 const saveError = ref('')
-const savedAt = ref(null)
 const confirmDelete = ref(false)
 
 // A week with saved picks opens read-only until you press "Edit picks".
 const hasSaved = ref(false)
 const editMode = ref(true)
 const serverCopy = ref(null)    // last saved version, so "Cancel" can put things back
-const tab = ref('games')        // games | email
 
 // ---- live lines + results for this week (DraftKings via ESPN, through the local API) ----
 const events = ref([])
 const ats = ref({})            // team cover records from your saved sheets, before this week
 const linesError = ref('')
-const fetchedAt = ref(null)
 const loadingLines = ref(false)
 let timer
 const LIVE_POLL = 30 * 1000      // a game is on: matches the server's ESPN cache
@@ -60,7 +56,6 @@ async function refreshLines() {
   try {
     const j = await getLines(props.week)
     events.value = j.events
-    fetchedAt.value = j.fetchedAt
     linesError.value = ''
   } catch (e) {
     linesError.value = `Current lines unavailable (${e.message}). Is the API running? Try: npm run api`
@@ -70,11 +65,8 @@ async function refreshLines() {
 }
 
 const nowLines = computed(() => games.value.map(g => currentLine(g, events.value)))
-const changedCount = computed(() => nowLines.value.filter((n, i) => n.changed && games.value[i]?.pick).length)
 const hasStarted = g => { const ev = resolveGame(g, events.value).event; return !!ev && ev.state !== 'pre' }
-const fetchedLabel = computed(() => (fetchedAt.value ? new Date(fetchedAt.value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''))
 const resultFor = i => scored.value?.games?.[i]
-const showLinesbar = computed(() => !!linesError.value || events.value.some(e => e.state !== 'post'))
 const liveCount = computed(() => events.value.filter(e => e.state === 'in').length)
 
 // ---- the pool's picks (each game's revealed at kickoff) + DraftKings public betting ----
@@ -106,9 +98,6 @@ async function poll() {
 }
 const onVisible = () => { if (document.visibilityState === 'visible' && !loading.value) poll() }
 
-watch(teamName, v => { try { localStorage.setItem('teamName', v) } catch {} })
-
-const defaultLabel = () => `${emailLeavesOut.value ? 'Rest of week' : 'Week'} ${props.week}.`
 
 // ---- load saved week ----
 const imageSrc = w => (w.hasImage ? `/api/weeks/${props.week}/image?ts=${encodeURIComponent(w.imageVersion || '')}` : '')
@@ -117,12 +106,9 @@ const imageSrc = w => (w.hasImage ? `/api/weeks/${props.week}/image?ts=${encodeU
 function hydrate(w) {
   games.value = w.games.map(g => ({ ...g }))
   hasSaved.value = w.picksSaved
-  label.value = w.picksSaved ? w.label : defaultLabel()
-  labelTouched.value = w.picksSaved
   adjustment.value = w.adjustment || 0
   adjNote.value = w.adjNote || ''
   scored.value = w.score
-  savedAt.value = w.updatedAt
   serverCopy.value = w
   editMode.value = !w.picksSaved
   imageUrl.value = imageSrc(w)
@@ -148,8 +134,7 @@ onMounted(async () => {
     hydrate(w)
     settle(w)
   } else {
-    label.value = defaultLabel()   // no lines yet: admins upload the sheet (or start from the schedule on purpose)
-    snapshot.value = ''
+    snapshot.value = ''   // no lines yet: admins upload the sheet (or start from the schedule on purpose)
   }
   loading.value = false
   timer = setTimeout(poll, liveCount.value ? LIVE_POLL : IDLE_POLL)
@@ -207,9 +192,7 @@ async function loadText(text) {
   const kept = parsed.filter(g => g.kept).length
   parsed.forEach(g => delete g.kept)
   games.value = parsed
-  if (!labelTouched.value) label.value = defaultLabel()
   editMode.value = true
-  tab.value = 'games'
   const notes = [`Found ${parsed.length} games.`]
   if (kept) notes.push(`Kept your picks for ${kept}.`)
   if (ocrWeek && ocrWeek !== props.week) notes.push(`⚠ The image says week ${ocrWeek}, but you're on week ${props.week}.`)
@@ -364,34 +347,48 @@ const warnings = computed(() => {
   return w
 })
 
-// ---- email output: your *saved* picks, raw sheet names, sheet order ----
-// Games that already kicked off were emailed earlier (e.g. Thursday), so they're left out unless you ask.
+// ---- the picks email: your *saved* picks, raw sheet names, sheet order ----
+// Games that already kicked off went in an earlier email (e.g. Thursday's), so they're left out, unless every
+// pick has kicked off.
 const savedPicks = computed(() => (serverCopy.value?.picksSaved ? serverCopy.value.games.filter(g => g.pick) : []))
-const startedPicks = computed(() => savedPicks.value.filter(hasStarted))
-const includeStartedOverride = ref(null)
-const includeStarted = computed(() => includeStartedOverride.value ?? startedPicks.value.length === savedPicks.value.length)
-const outGames = computed(() => savedPicks.value.filter(g => includeStarted.value || !hasStarted(g)))
-const emailLeavesOut = computed(() => outGames.value.length < savedPicks.value.length)
-watch(emailLeavesOut, () => { if (!labelTouched.value) label.value = defaultLabel() })
-const startedTotal = computed(() => startedPicks.value.reduce((s, g) => s + (Number(g.points) || 0), 0))
-const output = computed(() => {
-  const head = emailLeavesOut.value ? label.value : label.value.replace(/^rest of week/i, 'Week')
-  return [head, `Team name: ${teamName.value}`, '', '', ...outGames.value.map(g => `${pickName(g)} ${g.points}`)].join('\n')
+const outGames = computed(() => {
+  const notStarted = savedPicks.value.filter(g => !hasStarted(g))
+  return notStarted.length ? notStarted : savedPicks.value
 })
-async function copy() {
-  try {
-    await navigator.clipboard.writeText(output.value)
-    copied.value = true
-    setTimeout(() => (copied.value = false), 1800)
-  } catch {
-    document.getElementById('out')?.select()
-  }
+const header = computed(() => `${outGames.value.length < savedPicks.value.length ? 'Rest of week' : 'Week'} ${props.week}.`)
+const output = computed(() =>
+  [header.value, `Team name: ${mailPrefs.teamName}`, '', '', ...outGames.value.map(g => `${pickName(g)} ${g.points}`)].join('\n'))
+
+// ---- "Send picks": opens their own email to this week's league address (set by the admin) ----
+const os = platform()
+const mailOpen = ref(false)
+const mailNote = ref('')
+const leagueEmail = computed(() => serverCopy.value?.leagueEmail || '')
+const mailApp = computed(() => MAIL_APPS.find(a => a.id === mailPrefs.app))
+const message = () => ({
+  to: leagueEmail.value,
+  subject: [header.value.replace(/\.$/, ''), 'picks', mailPrefs.teamName && `– ${mailPrefs.teamName}`].filter(Boolean).join(' '),
+  body: output.value,
+  sender: mailPrefs.sender,
+})
+function launchMail() {
+  mailNote.value = openMail(mailPrefs.app, message(), os) ? '' : 'Your browser blocked the new tab. Allow pop-ups for this site, then try again.'
 }
+function sendPicks() {
+  if (mailApp.value) launchMail()
+  else mailOpen.value = true
+}
+function mailChosen() {
+  mailOpen.value = false
+  launchMail()
+}
+onMounted(loadMailPrefs)
+
 function resetPoints() { games.value.forEach(g => { g.points = 2 }) }
 
 // ---- saving ----
 const payload = computed(() => ({
-  label: label.value,
+  label: header.value,
   adjustment: Math.round(Number(adjustment.value) || 0),
   adjNote: adjNote.value,
   games: games.value.map(g => {
@@ -422,10 +419,7 @@ async function save() {
       pendingFile.value = null
     }
     const w = await saveWeek(props.week, payload.value)
-    const keepLabel = label.value
     hydrate(w)
-    label.value = keepLabel
-    labelTouched.value = true
     snapshot.value = JSON.stringify(payload.value)
     emit('saved')
   } catch (e) {
@@ -453,9 +447,8 @@ const tally = computed(() => {
 const segClass = x => (x.skip ? (x.outcome === 'skipped' ? 'skipped' : 'open') : x.live ? `live-${x.live}` : x.outcome)
 const segText = x => (x.skip ? `${x.g.fav} / ${x.g.dog}: ${OUTCOME_TEXT[x.outcome] || 'no pick'}`
   : `${pickName(x.g)} ${x.pts}: ${x.live ? LIVE_TEXT[x.live] : OUTCOME_TEXT[x.outcome]}`)
-const savedLabel = computed(() => (savedAt.value ? new Date(savedAt.value.replace(' ', 'T') + 'Z').toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''))
 
-function startEdit() { editMode.value = true; tab.value = 'games' }
+function startEdit() { editMode.value = true }
 // Switching modes adds/removes things above the games; keep this card where it was on screen
 async function keepInPlace(card, fn) {
   const before = card?.getBoundingClientRect().top
@@ -489,7 +482,7 @@ async function clearWeek() {
   if (w?.saved) {
     hydrate(w)
   } else {
-    games.value = []; scored.value = null; serverCopy.value = null; savedAt.value = null
+    games.value = []; scored.value = null; serverCopy.value = null
     hasSaved.value = false; editMode.value = true
   }
   snapshot.value = ''
@@ -521,15 +514,18 @@ const adjText = computed(() => [
             <span v-if="!games.length" class="badge new">Lines not posted yet</span>
             <span v-else :class="['badge', weekState.cls]">{{ weekState.text }}</span>
           </div>
-          <p class="wh-sub">
+          <p v-if="status || !games.length || scheduled || !hasSaved" class="wh-sub">
             <template v-if="status">{{ status }}</template>
             <template v-else-if="!games.length && isAdmin">Upload the spreads sheet. Saving posts the lines for everyone.</template>
             <template v-else-if="!games.length">Here’s the schedule. You can pick once the lines are posted.</template>
             <template v-else-if="scheduled && isAdmin">NFL schedule with DraftKings lines. Upload the sheet when it’s posted.</template>
             <template v-else-if="scheduled">DraftKings lines for now. The official sheet isn’t posted yet.</template>
-            <template v-else-if="savedLabel">Saved {{ savedLabel }}</template>
             <template v-else>Make your picks, then save.</template>
           </p>
+          <p v-if="!editMode && outGames.length && !leagueEmail" class="wh-to missing">
+            No league address for week {{ week }} yet, so the email won’t have a recipient.<template v-if="isAdmin"> Add it in Admin → League email addresses.</template>
+          </p>
+          <p v-if="mailNote" class="wh-to missing">{{ mailNote }}</p>
         </div>
         <div class="wh-actions">
           <template v-if="isAdmin">
@@ -538,7 +534,8 @@ const adjText = computed(() => [
             <button v-if="!games.length && events.length" class="btn ghost" @click="scaffold" title="Use the NFL schedule with DraftKings lines until the sheet is out">Use DraftKings lines</button>
           </template>
           <template v-if="games.length">
-            <button v-if="!editMode" class="btn primary" @click="startEdit">✎ Edit picks</button>
+            <button v-if="!editMode && outGames.length" class="btn primary" @click="sendPicks">✉ Send picks</button>
+            <button v-if="!editMode" :class="['btn', outGames.length ? 'ghost' : 'primary']" @click="startEdit">✎ Edit picks</button>
             <button v-else-if="hasSaved" class="btn ghost" @click="cancelEdit">Cancel</button>
           </template>
         </div>
@@ -554,13 +551,15 @@ const adjText = computed(() => [
           </div>
           <div class="stat">
             <dt>Record</dt><dd>{{ card.wins }}–{{ card.losses }}<template v-if="card.pushes">–{{ card.pushes }}</template></dd>
-            <span v-if="liveGames" class="stat-live" title="Games in progress: covering – not covering (– on the number)">
-              <i class="ldot"></i>Live {{ liveRec.wins }}–{{ liveRec.losses }}<template v-if="liveRec.pushes">–{{ liveRec.pushes }}</template>
+            <span v-if="liveGames" class="stat-live" title="Your record if every game on now ended as it stands">
+              <i class="ldot"></i>Live {{ card.wins + liveRec.wins }}–{{ card.losses + liveRec.losses }}<template v-if="card.pushes + liveRec.pushes">–{{ card.pushes + liveRec.pushes }}</template>
             </span>
           </div>
           <div v-if="hasResults && card.pending" class="stat">
             <dt>Max possible</dt><dd>{{ card.maxScore }}</dd>
-            <span class="stat-sub">if every game left covers</span>
+            <span v-if="liveGames && scored.liveMax != null" class="stat-live" title="Games on now end as they stand, every game not started yet covers">
+              <i class="ldot"></i>Live {{ scored.liveMax }}
+            </span>
           </div>
           <div v-else-if="!hasResults" :class="['stat', 'used', state]">
             <dt>Points used</dt><dd>{{ total }}<small> / {{ TARGET }}</small></dd>
@@ -609,7 +608,7 @@ const adjText = computed(() => [
           <b>Edit tools</b>
           <div class="tools">
             <button class="btn ghost" :disabled="loadingLines" @click="refreshLines">{{ loadingLines ? 'Refreshing…' : '↻ Refresh lines' }}</button>
-            <button v-if="scheduled" class="btn ghost" :disabled="loadingLines" @click="refreshLines().then(syncLines)" title="Replace the spreads with DraftKings' latest, keeping your picks">↻ Use latest DK lines</button>
+            <button v-if="scheduled" class="btn ghost" :disabled="loadingLines" @click="refreshLines().then(syncLines)" title="Replace the spreads with DraftKings' latest, keeping your picks">↻ Use latest DraftKings lines</button>
             <button class="btn ghost" @click="resetPoints">Reset to 2</button>
             <button :class="['btn', 'ghost', { active: fixNames }]" @click="fixNames = !fixNames">✎ Fix names</button>
           </div>
@@ -628,153 +627,105 @@ const adjText = computed(() => [
         </div>
       </section>
 
-      <!-- Games | Email -->
-      <div class="subtabs" role="tablist">
-        <button role="tab" :aria-selected="tab === 'games'" :class="{ on: tab === 'games' }" @click="tab = 'games'">Games <small>{{ games.length }}</small></button>
-        <button role="tab" :aria-selected="tab === 'email'" :class="{ on: tab === 'email' }" @click="tab = 'email'">✉ Email</button>
-      </div>
-
       <!-- ============ GAMES ============ -->
-      <template v-if="tab === 'games'">
-        <p v-if="showLinesbar" class="linesbar">
-          <span v-if="liveCount" class="livenote"><i class="ldot"></i>{{ liveCount }} game{{ liveCount > 1 ? 's' : '' }} live · scores update every 30s</span>
-          <span v-if="fetchedLabel">DraftKings lines via ESPN · updated {{ fetchedLabel }}</span>
-          <b v-if="changedCount" class="chg">⚠ {{ changedCount }} line{{ changedCount > 1 ? 's' : '' }} moved since your sheet</b>
-          <span v-if="linesError" class="err">{{ linesError }}</span>
-        </p>
+      <p v-if="linesError" class="linesbar">
+        <span class="err">{{ linesError }}</span>
+      </p>
 
-        <section class="filterbar">
-          <div class="search">
-            <span aria-hidden="true">⌕</span>
-            <input v-model="query" type="search" placeholder="Search a team…" aria-label="Search a team" />
-          </div>
-          <select v-model="sortKey" aria-label="Sort games">
-            <option v-for="[v, t] in sortOptions" :key="v" :value="v">{{ t }}</option>
-          </select>
-          <button :class="['btn', 'ghost', { active: showFilters || activeFilters }]" @click="showFilters = !showFilters" aria-label="Filters">
-            ⚙ Filters <span v-if="activeFilters" class="count">{{ activeFilters }}</span>
-          </button>
-          <div v-if="wide" class="layoutswitch" role="group" aria-label="Layout">
-            <button :class="{ on: layout === 'list' }" :aria-pressed="layout === 'list'" title="List" @click="layout = 'list'">
-              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5h12M2 8h12M2 12.5h12" /></svg>
-            </button>
-            <button :class="{ on: layout === 'grid' }" :aria-pressed="layout === 'grid'" title="Grid: every game at once" @click="layout = 'grid'">
-              <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1" /><rect x="9" y="2" width="5" height="5" rx="1" /><rect x="2" y="9" width="5" height="5" rx="1" /><rect x="9" y="9" width="5" height="5" rx="1" /></svg>
-            </button>
-          </div>
-        </section>
-
-        <section v-if="showFilters" class="chips">
-          <div class="chipgroup">
-            <span class="cg">My pick</span>
-            <button v-for="[v, t] in PICK_CHIPS" :key="v" :class="['chip', { on: fPick === v }]" @click="fPick = fPick === v ? '' : v">{{ t }}</button>
-          </div>
-          <div v-if="hasResults" class="chipgroup">
-            <span class="cg">Result</span>
-            <button v-for="[v, t] in RESULT_CHIPS" :key="v" :class="['chip', { on: fResult === v }]" @click="fResult = fResult === v ? '' : v">{{ t }}</button>
-          </div>
-          <div class="chipgroup">
-            <span class="cg">Other</span>
-            <button :class="['chip', { on: fTen }]" @click="fTen = !fTen">10+ points</button>
-            <button :class="['chip', { on: fMoved }]" @click="fMoved = !fMoved">Line moved</button>
-          </div>
-        </section>
-
-        <p v-if="isFiltered" class="showing">
-          Showing {{ visible.length }} of {{ games.length }} games
-          <button class="link" @click="clearFilters">Clear filters</button>
-        </p>
-
-        <section v-if="gridView" class="gamegrid">
-          <GameTile
-            v-for="x in visible"
-            :key="x.i"
-            :game="x.g"
-            :events="events"
-            :now="nowLines[x.i]"
-            :result="resultFor(x.i)"
-            :readonly="!editMode"
-            :editable="!editMode"
-            @edit="editFromCard"
-            :pool="poolFor(x.g)"
-            :split="splitFor(x.g)"
-          />
-        </section>
-        <section v-else-if="flat" class="group">
-          <GameRow
-            v-for="x in visible"
-            :key="x.i"
-            :game="x.g"
-            :events="events"
-            :now="nowLines[x.i]"
-            :result="resultFor(x.i)"
-            :ats="ats"
-            :editing="fixNames && editMode"
-            :readonly="!editMode"
-            :editable="!editMode"
-            @edit="editFromCard"
-            :pool="poolFor(x.g)"
-            :split="splitFor(x.g)"
-            show-day
-          />
-        </section>
-        <section v-else v-for="grp in groups" :key="grp.key" class="group">
-          <h2>{{ grp.day }} <small v-if="grp.when">{{ grp.when }}</small></h2>
-          <GameRow
-            v-for="x in grp.items"
-            :key="x.i"
-            :game="x.g"
-            :events="events"
-            :now="nowLines[x.i]"
-            :result="resultFor(x.i)"
-            :ats="ats"
-            :editing="fixNames && editMode"
-            :readonly="!editMode"
-            :editable="!editMode"
-            @edit="editFromCard"
-            :pool="poolFor(x.g)"
-            :split="splitFor(x.g)"
-          />
-        </section>
-        <p v-if="!visible.length" class="empty">No games match. <button class="link" @click="clearFilters">Clear filters</button></p>
-      </template>
-
-      <!-- ============ EMAIL ============ -->
-      <section v-else class="mail">
-        <div :class="['mailtotal', state]">
-          <span class="big">{{ total }}<small> / {{ TARGET }}</small></span>
-          <span class="msg">
-            <template v-if="state === 'good'">✓ Exactly 100</template>
-            <template v-else-if="diff > 0">{{ diff }} to go</template>
-            <template v-else>{{ -diff }} over</template>
-          </span>
-          <span class="dd">{{ doubleDigits }} double-digit</span>
+      <section class="filterbar">
+        <div class="search">
+          <span aria-hidden="true">⌕</span>
+          <input v-model="query" type="search" placeholder="Search a team…" aria-label="Search a team" />
         </div>
-        <ul v-if="warnings.length" class="warnings"><li v-for="w in warnings" :key="w">{{ w }}</li></ul>
-
-        <div class="mailcard">
-          <div class="em-fields">
-            <label>Header<input v-model="label" @input="labelTouched = true" /></label>
-            <label>Team name<input v-model="teamName" placeholder="Your pool team name" /></label>
-          </div>
-          <p v-if="dirty" class="unsaved">
-            <span>The email only has your <b>saved</b> picks. Save to include your latest changes.</span>
-            <button class="btn primary sm" :disabled="saving" @click="save()">{{ saving ? 'Saving…' : 'Save' }}</button>
-          </p>
-          <label v-if="startedPicks.length && startedPicks.length < savedPicks.length" class="chk">
-            <input type="checkbox" :checked="includeStarted" @change="includeStartedOverride = $event.target.checked" />
-            Include games that already kicked off
-            <small>({{ startedPicks.length }} game{{ startedPicks.length > 1 ? 's' : '' }}, {{ startedTotal }} pts)</small>
-          </label>
-          <template v-if="outGames.length">
-            <textarea id="out" readonly :value="output" :rows="Math.min(24, outGames.length + 5)"></textarea>
-            <p class="hint">Uses the team names exactly as written on the sheet.</p>
-            <button class="btn primary big" @click="copy">{{ copied ? '✓ Copied' : 'Copy for email' }}</button>
-          </template>
-          <p v-else class="hint">No saved picks yet. Tap a team on the Games tab, then save.</p>
-          <p v-if="saveError" class="err">{{ saveError }}</p>
+        <select v-model="sortKey" aria-label="Sort games">
+          <option v-for="[v, t] in sortOptions" :key="v" :value="v">{{ t }}</option>
+        </select>
+        <button :class="['btn', 'ghost', { active: showFilters || activeFilters }]" @click="showFilters = !showFilters" aria-label="Filters">
+          ⚙ Filters <span v-if="activeFilters" class="count">{{ activeFilters }}</span>
+        </button>
+        <div v-if="wide" class="layoutswitch" role="group" aria-label="Layout">
+          <button :class="{ on: layout === 'list' }" :aria-pressed="layout === 'list'" title="List" @click="layout = 'list'">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5h12M2 8h12M2 12.5h12" /></svg>
+          </button>
+          <button :class="{ on: layout === 'grid' }" :aria-pressed="layout === 'grid'" title="Grid: every game at once" @click="layout = 'grid'">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1" /><rect x="9" y="2" width="5" height="5" rx="1" /><rect x="2" y="9" width="5" height="5" rx="1" /><rect x="9" y="9" width="5" height="5" rx="1" /></svg>
+          </button>
         </div>
       </section>
+
+      <section v-if="showFilters" class="chips">
+        <div class="chipgroup">
+          <span class="cg">My pick</span>
+          <button v-for="[v, t] in PICK_CHIPS" :key="v" :class="['chip', { on: fPick === v }]" @click="fPick = fPick === v ? '' : v">{{ t }}</button>
+        </div>
+        <div v-if="hasResults" class="chipgroup">
+          <span class="cg">Result</span>
+          <button v-for="[v, t] in RESULT_CHIPS" :key="v" :class="['chip', { on: fResult === v }]" @click="fResult = fResult === v ? '' : v">{{ t }}</button>
+        </div>
+        <div class="chipgroup">
+          <span class="cg">Other</span>
+          <button :class="['chip', { on: fTen }]" @click="fTen = !fTen">10+ points</button>
+          <button :class="['chip', { on: fMoved }]" @click="fMoved = !fMoved">Line moved</button>
+        </div>
+      </section>
+
+      <p v-if="isFiltered" class="showing">
+        Showing {{ visible.length }} of {{ games.length }} games
+        <button class="link" @click="clearFilters">Clear filters</button>
+      </p>
+
+      <section v-if="gridView" class="gamegrid">
+        <GameTile
+          v-for="x in visible"
+          :key="x.i"
+          :game="x.g"
+          :events="events"
+          :now="nowLines[x.i]"
+          :result="resultFor(x.i)"
+          :readonly="!editMode"
+          :editable="!editMode"
+          @edit="editFromCard"
+          :pool="poolFor(x.g)"
+          :split="splitFor(x.g)"
+        />
+      </section>
+      <section v-else-if="flat" class="group">
+        <GameRow
+          v-for="x in visible"
+          :key="x.i"
+          :game="x.g"
+          :events="events"
+          :now="nowLines[x.i]"
+          :result="resultFor(x.i)"
+          :ats="ats"
+          :editing="fixNames && editMode"
+          :readonly="!editMode"
+          :editable="!editMode"
+          @edit="editFromCard"
+          :pool="poolFor(x.g)"
+          :split="splitFor(x.g)"
+          show-day
+        />
+      </section>
+      <section v-else v-for="grp in groups" :key="grp.key" class="group">
+        <h2>{{ grp.day }} <small v-if="grp.when">{{ grp.when }}</small></h2>
+        <GameRow
+          v-for="x in grp.items"
+          :key="x.i"
+          :game="x.g"
+          :events="events"
+          :now="nowLines[x.i]"
+          :result="resultFor(x.i)"
+          :ats="ats"
+          :editing="fixNames && editMode"
+          :readonly="!editMode"
+          :editable="!editMode"
+          @edit="editFromCard"
+          :pool="poolFor(x.g)"
+          :split="splitFor(x.g)"
+        />
+      </section>
+      <p v-if="!visible.length" class="empty">No games match. <button class="link" @click="clearFilters">Clear filters</button></p>
 
       <!-- sticky total: only while editing -->
       <footer v-if="editMode" :class="['totalbar', state]">
@@ -788,16 +739,16 @@ const adjText = computed(() => [
           </span>
           <span class="dd">{{ picked.length }} of {{ games.length }} picked · {{ doubleDigits }} double-digit</span>
           <span class="tb-actions">
-          <button v-if="tab !== 'email'" class="btn ghost" @click="tab = 'email'">✉ Email</button>
           <button v-if="hasSaved" class="btn ghost cancel" :disabled="saving" :title="dirty ? 'Undo your changes and go back to your saved picks' : 'Stop editing'" @click="cancelFromBar">Cancel</button>
           <button :class="['btn', dirty ? 'primary' : 'ghost']" :disabled="saving || !dirty" @click="save()">{{ saving ? '…' : dirty ? 'Save' : 'Saved ✓' }}</button>
           </span>
         </div>
-        <ul v-if="warnings.length && tab !== 'email'" class="warnings"><li v-for="w in warnings" :key="w">{{ w }}</li></ul>
+        <ul v-if="warnings.length" class="warnings"><li v-for="w in warnings" :key="w">{{ w }}</li></ul>
         <p v-if="saveError" class="err">{{ saveError }}</p>
       </footer>
     </template>
 
+    <MailSettingsDialog v-if="mailOpen" sending @close="mailOpen = false" @saved="mailChosen" />
     <UploadDialog
       v-if="uploadOpen && isAdmin"
       :week="week"

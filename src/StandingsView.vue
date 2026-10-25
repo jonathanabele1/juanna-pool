@@ -53,20 +53,35 @@ const weekOver = computed(() => g.value.total > 0 && g.value.final === g.value.t
 const isLive = computed(() => g.value.live > 0)
 const rows = computed(() => data.value?.rows || [])
 
-// Week table: sorted by live score (the score if every game ended now) until the week has no live games,
-// then by score. Tap a column header to sort by it; tap it again to flip (lowest first).
-const sortKey = ref('projected')
+// The extra column next to Score: live score, max possible, or live max (live games end as they stand,
+// every game not started covers). Which ones make sense depends on what's live and what's left to play.
+const METRICS = { projected: ['Live score', 'Live score'], max: ['Max possible', 'Max'], liveMax: ['Live max possible', 'Live max'] }
+const anyPending = computed(() => rows.value.some(r => r.pending))
+const metricOptions = computed(() => [isLive.value && 'projected', anyPending.value && 'max', isLive.value && anyPending.value && 'liveMax'].filter(Boolean))
+const metric = ref(saved('standingsMetric', 'projected'))
+watch(metric, v => { try { localStorage.setItem('standingsMetric', v) } catch {} })
+const shown = computed(() => (metricOptions.value.includes(metric.value) ? metric.value : metricOptions.value[0] || null))
+function pickMetric(m) { metric.value = m; sortKey.value = 'metric'; sortDir.value = -1 }
+
+// Week table: sorted by the extra column while games are live, otherwise by score.
+// Tap a column header to sort by it; tap it again to flip (lowest first).
+const sortKey = ref(null)   // null: the default above; 'metric' | 'score' once you tap
 const sortDir = ref(-1)
-const key = computed(() => (isLive.value ? sortKey.value : 'score'))
+const key = computed(() => {
+  const k = sortKey.value ?? (isLive.value ? 'metric' : 'score')
+  return k === 'metric' && shown.value ? shown.value : 'score'
+})
 function sortBy(k) {
-  if (key.value === k) sortDir.value *= -1
+  const target = k === 'score' ? 'score' : shown.value
+  if (key.value === target) sortDir.value *= -1
   else { sortKey.value = k; sortDir.value = -1 }
 }
 const sorted = computed(() => {
-  const k = key.value, other = k === 'score' ? 'projected' : 'score'
+  const k = key.value, other = k === 'score' ? (shown.value || 'projected') : 'score'
   return [...rows.value].sort((a, b) => sortDir.value * (a[k] - b[k] || a[other] - b[other]) || a.name.localeCompare(b.name))
 })
-const rankOf = r => (key.value === 'projected' ? r.projectedRank : r.rank)
+const rankOf = r => (key.value === 'projected' ? r.projectedRank : key.value === 'score' ? r.rank
+  : 1 + rows.value.filter(x => x[key.value] > r[key.value]).length)
 const arrow = k => (key.value === k ? (sortDir.value < 0 ? '▼' : '▲') : '')
 
 const rec = r => `${r.wins}–${r.losses}${r.pushes ? `–${r.pushes}` : ''}`
@@ -130,12 +145,17 @@ const behind = computed(() => (me.value && rows.value[0] && rows.value[0] !== me
         </section>
 
         <section v-else class="table" role="table" aria-label="Week standings">
-          <div :class="['tr', 'th', { one: !isLive }]" role="row">
+          <div v-if="metricOptions.length > 1" class="metrics" role="group" aria-label="Extra column">
+            <button v-for="m in metricOptions" :key="m" type="button" :class="{ on: shown === m }" :aria-pressed="shown === m" @click="pickMetric(m)">
+              <i v-if="m !== 'max'" class="ldot"></i>{{ METRICS[m][0] }}
+            </button>
+          </div>
+          <div :class="['tr', 'th', { one: !shown }]" role="row">
             <span role="columnheader">#</span>
             <span role="columnheader">Player</span>
-            <button v-if="isLive" role="columnheader" :aria-sort="key === 'projected' ? (sortDir < 0 ? 'descending' : 'ascending') : 'none'"
-                    :class="['num', 'sort', { on: key === 'projected' }]" title="Score if every game ended now. Tap to sort." @click="sortBy('projected')">
-              <i class="ldot"></i>Live score <span class="arr">{{ arrow('projected') }}</span>
+            <button v-if="shown" role="columnheader" :aria-sort="key === shown ? (sortDir < 0 ? 'descending' : 'ascending') : 'none'"
+                    :class="['num', 'sort', { on: key === shown }]" :title="`${METRICS[shown][0]}. Tap to sort.`" @click="sortBy('metric')">
+              <i v-if="shown !== 'max'" class="ldot"></i>{{ METRICS[shown][1] }} <span class="arr">{{ arrow(shown) }}</span>
             </button>
             <button role="columnheader" :aria-sort="key === 'score' ? (sortDir < 0 ? 'descending' : 'ascending') : 'none'"
                     :class="['num', 'sort', { on: key === 'score' }]" title="Tap to sort" @click="sortBy('score')">
@@ -144,7 +164,7 @@ const behind = computed(() => (me.value && rows.value[0] && rows.value[0] !== me
           </div>
           <button
             v-for="r in sorted" :key="r.id" type="button" role="row"
-            :class="['tr', { one: !isLive, me: r.me, first: rankOf(r) === 1 }]"
+            :class="['tr', { one: !shown, me: r.me, first: rankOf(r) === 1 }]"
             @click="emit('open', r.id)"
           >
             <span class="rank">
@@ -159,13 +179,13 @@ const behind = computed(() => (me.value && rows.value[0] && rows.value[0] !== me
               <small>
                 {{ rec(r) }}
                 <template v-if="liveRec(r)"> · <span class="lv"><i class="ldot"></i>{{ liveRec(r) }} live</span></template>
-                <template v-if="r.pending && !isLive"> · {{ r.pending }} to play · max {{ r.max }}</template>
+                <template v-if="r.pending && !isLive"> · {{ r.pending }} to play</template>
                 <template v-if="r.penalties"> · <span class="neg">−{{ r.penalties }} pen.</span></template>
               </small>
             </span>
-            <span v-if="isLive" :class="['num', 'proj', { on: key === 'projected' }]">
-              <b :class="{ neg: r.projected < 0 }">{{ r.projected }}</b>
-              <small v-if="r.projected !== r.score" :class="r.projected > r.score ? 'pos' : 'neg'">{{ sign(r.projected - r.score) }}</small>
+            <span v-if="shown" :class="['num', 'proj', { on: key === shown }]">
+              <b :class="{ neg: r[shown] < 0 }">{{ r[shown] ?? '—' }}</b>
+              <small v-if="shown === 'projected' && r.projected !== r.score" :class="r.projected > r.score ? 'pos' : 'neg'">{{ sign(r.projected - r.score) }}</small>
             </span>
             <span :class="['num', 'score', { neg: r.score < 0, on: key === 'score' }]">{{ r.score }}</span>
           </button>
@@ -247,6 +267,10 @@ const behind = computed(() => (me.value && rows.value[0] && rows.value[0] !== me
 }
 .th .sort:hover { color: #475569; }
 .th .sort.on { color: #0f172a; }
+.metrics { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 12px 4px; }
+.metrics button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px; border: 1px solid #e2e8f0; border-radius: 999px; background: #fff; color: #475569; font: inherit; font-size: .78rem; font-weight: 700; cursor: pointer; }
+.metrics button.on { background: #0f172a; border-color: #0f172a; color: #fff; }
+.metrics button:focus-visible { outline: 2px solid #93c5fd; outline-offset: 1px; }
 .th .sort:focus-visible { outline: 2px solid #93c5fd; border-radius: 4px; }
 .arr { display: inline-block; min-width: .7em; font-size: .6rem; }
 button.tr { cursor: pointer; transition: background .12s; }

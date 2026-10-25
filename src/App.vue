@@ -2,7 +2,6 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { getLines, getWeeks, getMe, getAnnouncement, getPlayers, isDemoLive, setDemoLive } from './api.js'
 import WeekBar from './components/WeekBar.vue'
-import Countdown from './components/Countdown.vue'
 import AccountMenu from './components/AccountMenu.vue'
 import PicksView from './PicksView.vue'
 import StatsView from './StatsView.vue'
@@ -114,7 +113,6 @@ watch(asAdmin, on => { if (!on && user.value && tab.value === 'admin') tab.value
         <button class="btn sm" @click="toggleDemo(false)">Turn off</button>
       </p>
       <p v-if="announcement" class="announce">📣 {{ announcement }}</p>
-      <Countdown />
 
       <template v-if="week">
         <div v-show="tab === 'picks'">

@@ -14,12 +14,20 @@
   set on a picked game.
 - A game with no pick is a skip (−20) only once it kicks off. Before that it's just open.
 
-## Email
-- The Email tab builds the email from your **saved** picks only, in sheet order with the sheet's team names.
-  If you have unsaved changes it says so and offers a Save button.
-- Picks on games that already kicked off are left out by default (they went in an earlier email, e.g.
-  Thursday's), and the header becomes "Rest of week N." A checkbox adds them back.
-- Thursday flow: pick the Thursday game, Save, copy the email. Sunday: pick the rest, Save, copy again.
+## Sending picks
+- Once a week has saved picks, its card shows **✉ Send picks**. It opens a new email from the player's own
+  account, addressed to that week's league address (set in Admin → League email addresses), with the subject and
+  picks filled in. They check it and send it themselves. It has to come from their own mailbox: the league goes by
+  when it was sent, and a disputed pick is settled by forwarding the original from Sent.
+- The email has your **saved** picks only, in sheet order with the sheet's team names, under "Week N." and your
+  team name. Picks on games that already kicked off are left out (they went in an earlier email, e.g. Thursday's)
+  and the header becomes "Rest of week N.", unless every pick has kicked off.
+- The first tap asks how to send: Gmail, Outlook or Mail app, plus your team name. It's saved on the account, and
+  **account menu → Email settings** changes it later.
+  - Phones: the Gmail or Outlook app opens. If it isn't installed, the website opens instead.
+  - Desktop: Gmail or outlook.com opens in a new tab. An optional Gmail address picks the right account when
+    someone is signed into several. Mail app means a plain `mailto:` link.
+- Thursday flow: pick the Thursday game, Save, Send picks. Sunday: Edit picks, pick the rest, Save, Send picks.
 - Older saves that used Email/Sent/Skip still load: Email and Sent picks keep their team, Skip becomes no pick.
 
 ## Scoring (computed by the backend from ESPN final scores)

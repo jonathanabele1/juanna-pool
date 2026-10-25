@@ -7,9 +7,10 @@
 - Admins are listed in their own `admins` table (`user_id` → `users.id`); a user is an admin when they have a row
   there. Promote/demote from **Admin → Accounts**.
 - Admins: post the week's lines (upload the sheet on the Picks tab; saving posts it for everyone), override deadlines,
-  set per-player adjustments/penalties, manage accounts and sign-ups,
+  set per-player adjustments/penalties, set each week's league email address (for the Send picks button),
+  manage accounts and sign-ups,
   post an announcement, and download/restore backups.
-- Regular players: make and save their own picks, copy the email, see their own stats.
+- Regular players: make and save their own picks, send their picks email, see their own stats.
 
 ## Deadlines
 Worked out from ESPN kickoff times (ET): one hour before the first game of each day. Sunday + Monday games are due

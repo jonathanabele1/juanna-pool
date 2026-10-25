@@ -107,11 +107,11 @@ const resultFor = i => (score.value?.games?.[i]?.outcome === 'hidden' ? null : s
               </div>
               <div class="stat">
                 <dt>Record</dt><dd>{{ score.wins }}–{{ score.losses }}<template v-if="score.pushes">–{{ score.pushes }}</template></dd>
-                <span v-if="liveGames" class="stat-live"><i class="ldot"></i>Live {{ liveRec.wins }}–{{ liveRec.losses }}<template v-if="liveRec.pushes">–{{ liveRec.pushes }}</template></span>
+                <span v-if="liveGames" class="stat-live"><i class="ldot"></i>Live {{ score.wins + liveRec.wins }}–{{ score.losses + liveRec.losses }}<template v-if="score.pushes + liveRec.pushes">–{{ score.pushes + liveRec.pushes }}</template></span>
               </div>
               <div v-if="score.pending" class="stat">
                 <dt>Max possible</dt><dd>{{ score.maxScore }}</dd>
-                <span class="stat-sub">if every game left covers</span>
+                <span v-if="liveGames && score.liveMax != null" class="stat-live"><i class="ldot"></i>Live {{ score.liveMax }}</span>
               </div>
             </dl>
           </div>

@@ -1,4 +1,5 @@
-"""Admin-only API: accounts, deadline overrides, per-player adjustments/unlocks, announcement, backup/restore."""
+"""Admin-only API: accounts, deadline overrides, per-player adjustments/unlocks, league email addresses,
+announcement, backup/restore."""
 import sqlite3
 import tempfile
 from datetime import date
@@ -40,6 +41,10 @@ class Overrides(BaseModel):
 
 class Announcement(BaseModel):
     text: str = ""
+
+
+class LeagueEmails(BaseModel):
+    emails: dict[int, str]  # week -> where that week's picks go; blank clears it
 
 
 class Signup(BaseModel):
@@ -147,6 +152,19 @@ def delete_lines(n: int):
 
 
 # ---------------- site ----------------
+
+@router.get("/league-emails")
+def get_league_emails():
+    return db.league_emails()
+
+
+@router.put("/league-emails")
+def set_league_emails(body: LeagueEmails):
+    if any(not 1 <= n <= 22 for n in body.emails):
+        raise HTTPException(400, "Weeks run 1–22")
+    db.set_league_emails({n: auth.validate_email(e) for n, e in body.emails.items() if e.strip()})
+    return db.league_emails()
+
 
 @router.put("/announcement")
 def set_announcement(body: Announcement):

@@ -25,6 +25,8 @@ export const login = (username, password) => send('POST', '/api/auth/login', { u
 export const getSignupInfo = () => call('/api/auth/signup')
 export const signup = body => send('POST', '/api/auth/signup', body)
 export const logout = () => send('POST', '/api/auth/logout', {})
+export const getMailPrefs = () => call('/api/auth/mail')
+export const setMailPrefs = body => send('PUT', '/api/auth/mail', body)
 export const changePassword = (current, next) => send('POST', '/api/auth/password', { current, new: next })
 
 export const getLines = week => call(`/api/lines${week ? `?week=${week}` : ''}`)
@@ -57,6 +59,8 @@ export const admin = {
   deleteLines: n => call(`/api/admin/weeks/${n}/lines`, { method: 'DELETE' }),
   signup: () => call('/api/admin/signup'),
   setSignup: body => send('PUT', '/api/admin/signup', body),
+  leagueEmails: () => call('/api/admin/league-emails'),
+  setLeagueEmails: emails => send('PUT', '/api/admin/league-emails', { emails }),
   setAnnouncement: text => send('PUT', '/api/admin/announcement', { text }),
   restore: file => call('/api/admin/restore', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file }),
 }

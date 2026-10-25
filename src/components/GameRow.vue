@@ -62,7 +62,15 @@ const outcome = computed(() => {
   return ['win', 'loss', 'push'].includes(o) ? o : cover.value?.status || null
 })
 const liveStatus = computed(() => (live.value ? cover.value?.status || null : null))
-const num = n => String(Math.abs(n)).replace('.5', '½')
+const num = n => String(Math.abs(n)).replace(/^0\.5$/, '½').replace('.5', '½')
+const earnedText = computed(() => {
+  if (outcome.value === 'loss') return '0'
+  return `+${num(props.result?.earned ?? (outcome.value === 'push' ? g.value.points / 2 : g.value.points))}`
+})
+const liveEarnedText = computed(() => {
+  const st = cover.value?.status
+  return st === 'loss' ? '0' : `+${num(st === 'push' ? g.value.points / 2 : g.value.points)}`
+})
 const coverText = computed(() => {
   const c = cover.value
   if (!c) return ''
@@ -117,21 +125,22 @@ const poolStatus = computed(() => (final.value ? finalText.value : live.value ? 
 
       <span class="spacer"></span>
 
-      <span v-if="final && outcome" :class="['pill', 'res', outcome]">
-        {{ outcome === 'win' ? 'Covered' : outcome === 'loss' ? 'Missed' : 'Push' }}
-        <b>{{ outcome === 'win' ? `+${result?.earned ?? g.points}` : outcome === 'loss' ? `0 of ${g.points}` : `+${num(result?.earned ?? g.points / 2)}` }}</b>
+      <span v-if="final && outcome" :class="['result', outcome]" :title="`${earnedText} of the ${g.points} you wagered`">
+        <span class="r-label">{{ outcome === 'win' ? 'Covered' : outcome === 'loss' ? 'Missed' : 'Push' }}</span>
+        <b class="r-pts">{{ earnedText }}</b>
+        <span class="r-of">of {{ g.points }}</span>
       </span>
-      <span v-else-if="live && cover" :class="['pill', 'cov', cover.status]" title="Your pick against the sheet spread, if it ended now">
-        {{ coverText }}
-        <b v-if="cover.status === 'win'">+{{ g.points }}</b>
-        <b v-else-if="cover.status === 'push'">+{{ num(g.points / 2) }}</b>
+      <span v-else-if="live && cover" :class="['result', 'live', cover.status]" :title="`If it ended now: ${liveEarnedText} of the ${g.points} you wagered`">
+        <span class="r-label">{{ coverText }}</span>
+        <b class="r-pts">{{ liveEarnedText }}</b>
+        <span class="r-of">of {{ g.points }}</span>
       </span>
       <span
         v-else-if="!live && !final && now?.changed"
         :class="['pill', 'now', { changed: now?.changed, flipped: now?.flipped }]"
         :title="now?.title"
       >
-        DK {{ now?.text }}
+        DraftKings {{ now?.text }}
         <b v-if="now?.delta">{{ deltaText(now.delta) }}</b>
         <b v-else-if="now?.flipped">flipped</b>
       </span>
@@ -157,6 +166,7 @@ const poolStatus = computed(() => (final.value ? finalText.value : live.value ? 
         :live="g.pick === s.key ? liveStatus : null"
         :possession="live && !!info?.possession && info.possession === sideAbbr(s.key)"
         :trailing="!!leader && leader !== s.key"
+        :points="g.pick === s.key ? g.points : null"
         @select="choose(s.key)"
         @update:raw="g[s.key] = $event"
         :style="{ gridColumn: i === 0 ? 1 : 3 }"
@@ -211,12 +221,9 @@ const poolStatus = computed(() => (final.value ? finalText.value : live.value ? 
       <span class="picked">
         <template v-if="g.hidden"><span aria-hidden="true">🔒</span> Pick hidden until kickoff</template>
         <template v-else-if="!g.pick">No pick</template>
-        <template v-else>Picked <b>{{ pickedName }}</b></template>
+        <template v-else>Picked <b>{{ pickedName }}</b><template v-if="g.points"> · {{ g.points }} pts</template></template>
       </span>
       <span class="spacer"></span>
-      <span v-if="g.pick" :class="['ptsbadge', { loy: isLoy }]">
-        <template v-if="isLoy">★ Lock · </template>{{ g.points }} pts
-      </span>
       <button v-if="editable" type="button" class="edit-btn" :aria-label="`Edit picks (${g.fav} vs ${g.dog})`" @click="$emit('edit', $event.currentTarget.closest('article'))">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 2.5l2.5 2.5L6 12.5H3.5V10z"/></svg> {{ g.pick ? 'Edit' : 'Pick' }}
       </button>
@@ -247,9 +254,6 @@ const poolStatus = computed(() => (final.value ? finalText.value : live.value ? 
 .pill.final { background: #0f172a; color: #fff; letter-spacing: .04em; text-transform: uppercase; }
 .pill.live { background: #dc2626; color: #fff; letter-spacing: .06em; text-transform: uppercase; gap: 6px; }
 .pill.clock { background: #fef2f2; color: #991b1b; font-variant-numeric: tabular-nums; }
-.pill.cov.win { background: #dcfce7; color: #166534; }
-.pill.cov.loss { background: #fef3c7; color: #92400e; }
-.pill.cov.push { background: #e2e8f0; color: #334155; }
 .pulse { width: 7px; height: 7px; border-radius: 50%; background: #fff; animation: pulse 1.4s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.7); } }
 @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
@@ -267,9 +271,21 @@ const poolStatus = computed(() => (final.value ? finalText.value : live.value ? 
 .situation .down { font-weight: 600; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .situation .down em { font-style: normal; font-size: .64rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; background: #fee2e2; color: #b91c1c; }
 .situation .last { color: #64748b; font-size: .76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pill.res.win { background: #dcfce7; color: #166534; }
-.pill.res.loss { background: #fee2e2; color: #991b1b; }
-.pill.res.push { background: #e2e8f0; color: #334155; }
+/* final: what you got back, out of what you wagered */
+.result { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px 0 11px; border-radius: 12px; white-space: nowrap; animation: res-in .35s cubic-bezier(.2, 1.4, .4, 1) both; }
+.r-label { font-size: .64rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.r-pts { font-size: 1.35rem; font-weight: 900; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.r-of { font-size: .72rem; font-weight: 700; opacity: .75; font-variant-numeric: tabular-nums; }
+.result.win { background: #16a34a; color: #fff; box-shadow: 0 2px 8px #16a34a40; }
+.result.loss { background: #fef2f2; color: #b91c1c; box-shadow: inset 0 0 0 1.5px #fecaca; }
+.result.push { background: #f1f5f9; color: #334155; box-shadow: inset 0 0 0 1.5px #e2e8f0; }
+/* live: same shape, lighter, since it can still change */
+.result.live { animation: none; }
+.result.live.win { background: #dcfce7; color: #166534; box-shadow: inset 0 0 0 1.5px #86efac; }
+.result.live.loss { background: #fef3c7; color: #92400e; box-shadow: inset 0 0 0 1.5px #fcd34d; }
+.result.live.push { background: #f1f5f9; color: #334155; box-shadow: inset 0 0 0 1.5px #e2e8f0; }
+@keyframes res-in { from { transform: scale(.85); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .result { animation: none; } }
 .pill.started { background: #fee2e2; color: #991b1b; }
 .pill.now.changed { background: #fef3c7; color: #92400e; box-shadow: 0 0 0 2px #fcd34d; }
 .pill.now.flipped { background: #fee2e2; color: #991b1b; box-shadow: 0 0 0 2px #fca5a5; }
@@ -282,8 +298,6 @@ const poolStatus = computed(() => (final.value ? finalText.value : live.value ? 
 .foot.ro { margin-top: 8px; }
 .picked { font-size: .85rem; color: #475569; }
 .picked b { color: #0f172a; }
-.ptsbadge { font-weight: 800; font-size: .95rem; padding: 4px 12px; border-radius: 999px; background: #f1f5f9; color: #0f172a; font-variant-numeric: tabular-nums; }
-.ptsbadge.loy { background: #fef08a; color: #422006; }
 .link { background: none; border: 0; padding: 0; color: #2563eb; cursor: pointer; font: inherit; text-decoration: underline; }
 .loy { border: 1px solid #e2e8f0; background: #fff; border-radius: 999px; padding: 5px 10px; font-size: .75rem; font-weight: 700; color: #94a3b8; cursor: pointer; }
 .loy.on { background: #facc15; border-color: #eab308; color: #422006; }
