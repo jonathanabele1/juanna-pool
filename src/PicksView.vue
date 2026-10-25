@@ -6,6 +6,7 @@ import { getLines, getWeek, saveWeek, deleteWeek, uploadImage, getTeamCovers, ge
 import { MAIL_APPS, openMail, platform } from './mail.js'
 import { mailPrefs, loadMailPrefs } from './mailPrefs.js'
 import { gameKey, poolByKey } from './pool.js'
+import { sideOdds, pctText, pushText } from './odds.js'
 import GameRow from './components/GameRow.vue'
 import GameTile from './components/GameTile.vue'
 import UploadDialog from './components/UploadDialog.vue'
@@ -65,6 +66,9 @@ async function refreshLines() {
 }
 
 const nowLines = computed(() => games.value.map(g => currentLine(g, events.value)))
+// each game's cover odds for the favorite (games on now or not started), by ESPN event
+const odds = ref({})
+const oddsFor = g => odds.value[g.eventId ?? resolveGame(g, events.value).event?.id] || null
 const hasStarted = g => { const ev = resolveGame(g, events.value).event; return !!ev && ev.state !== 'pre' }
 // The server scored your *saved* picks. While you change a pick (or its points), show the result for the new one.
 const resultFor = i => {
@@ -111,10 +115,9 @@ async function poll() {
   await refreshLines()
   refreshPool()
   if (!liveCount.value) refreshSplits()
-  if (hasSaved.value && (wasLive || liveCount.value)) {
-    const w = await getWeek(props.week).catch(() => null)
-    if (w?.score) { scored.value = w.score; emit('scored') }
-  }
+  const w = await getWeek(props.week).catch(() => null)
+  if (w) odds.value = w.odds || {}
+  if (hasSaved.value && (wasLive || liveCount.value) && w?.score) { scored.value = w.score; emit('scored') }
   timer = setTimeout(poll, liveCount.value ? LIVE_POLL : IDLE_POLL)
 }
 const onVisible = () => { if (document.visibilityState === 'visible' && !loading.value) poll() }
@@ -148,6 +151,7 @@ onMounted(async () => {
     getTeamCovers(props.week).catch(() => ({})),
   ])
   teams.value = covers
+  odds.value = w?.odds || {}
   refreshPool()
   refreshSplits()
   if (w?.hasImage) imageUrl.value = imageSrc(w)
@@ -249,92 +253,54 @@ const onPaste = e => {
 onMounted(() => window.addEventListener('paste', onPaste))
 onUnmounted(() => window.removeEventListener('paste', onPaste))
 
-// ---- search / sort / filter (default = kickoff order, grouped by kickoff slot) ----
-const query = ref('')
-const sortKey = ref('time')
-const showFilters = ref(false)
-const fPick = ref('')
-const fResult = ref('')
-const fTen = ref(false)
-const fMoved = ref(false)
-
-const PICK_CHIPS = [['fav', 'Favorite'], ['dog', 'Underdog'], ['home', 'Home team'], ['away', 'Away team']]
-const RESULT_CHIPS = [['win', 'Covered'], ['loss', 'Missed'], ['push', 'Push'], ['pending', 'Pending']]
-const SORTS = {
-  ptsDesc: [x => (x.skip ? null : x.pts), -1],
-  ptsAsc: [x => (x.skip ? null : x.pts), 1],
-  spreadDesc: [x => x.g.spread, -1],
-  spreadAsc: [x => x.g.spread, 1],
-  moved: [x => x.moved, -1],
-  best: [x => x.signed, -1],
-  worst: [x => x.signed, 1],
-}
+// ---- view pills: one tap shows the games you care about (default: every game, in kickoff order) ----
+const view = ref('all')
 
 const liveRec = computed(() => scored.value?.live || { wins: 0, losses: 0, pushes: 0, points: 0 })
 const liveGames = computed(() => liveRec.value.wins + liveRec.value.losses + liveRec.value.pushes)
 const hasResults = computed(() => !!scored.value && scored.value.wins + scored.value.losses + scored.value.pushes + liveGames.value > 0)
 // the week card always shows; before anything's scored (or saved) it's 0 and 0–0
 const card = computed(() => scored.value || { score: 0, wins: 0, losses: 0, pushes: 0, pending: 0, adjustment: 0 })
-const sortOptions = computed(() => [
-  ['time', 'Kickoff order'],
-  ['ptsDesc', 'Points: high → low'],
-  ['ptsAsc', 'Points: low → high'],
-  ['spreadDesc', 'Spread: biggest first'],
-  ['spreadAsc', 'Spread: smallest first'],
-  ['moved', 'Line moved most'],
-  ...(hasResults.value ? [['best', 'Best results first'], ['worst', 'Worst results first']] : []),
-])
 
 const rowInfo = computed(() => games.value.map((g, i) => {
   const r = resolveGame(g, events.value)
   const res = resultFor(i)
-  const now = nowLines.value[i]
   const pts = Number(g.points) || 0
-  const teams = [r.favTeam, r.dogTeam].flatMap(t => (t ? [t.location, t.name, t.abbr] : []))
   return {
     g, i, pts,
     skip: !g.pick,
     outcome: res?.outcome || 'pending',
     live: res?.outcome === 'pending' ? res?.live || null : null,  // covering right now, game still on
-    text: [g.fav, g.dog, ...teams].join(' ').toLowerCase(),
-    pickHome: g.pick === 'fav' ? r.favHome : !r.favHome,
-    moved: Math.abs(now?.delta || 0) + (now?.flipped ? 100 : 0),
-    signed: res?.outcome === 'win' ? pts : res?.outcome === 'loss' ? -pts : res?.outcome === 'push' ? pts / 2 : 0,
+    state: r.event?.state || res?.state || 'pre',   // pre | in | post
   }
 }))
 
+// Live / Upcoming / Final / No pick only show while they have games; Most points sorts every game by your points.
+const VIEWS = {
+  all: { label: 'All', keep: () => true },
+  live: { label: 'Live', keep: x => x.state === 'in' },
+  upcoming: { label: 'Pending', keep: x => x.state === 'pre' },
+  final: { label: 'Final', keep: x => x.state === 'post' },
+  points: { label: 'Top points', keep: () => true, sort: true },
+  open: { label: 'No pick', keep: x => x.skip && x.state === 'pre', editOnly: true },
+}
+const viewPills = computed(() => Object.entries(VIEWS)
+  .map(([id, v]) => ({ id, label: v.label, n: rowInfo.value.filter(v.keep).length, sort: v.sort }))
+  .filter(p => p.id === 'all' || p.id === 'points'
+    ? rowInfo.value.length > 0
+    : p.n > 0 && p.n < rowInfo.value.length && !(VIEWS[p.id].editOnly && !editMode.value)))
+// the chosen view ran out of games (the last live game ended): back to all
+const activeView = computed(() => (viewPills.value.some(p => p.id === view.value) ? view.value : 'all'))
+function pickView(id) { view.value = activeView.value === id ? 'all' : id }
+
 const visible = computed(() => {
-  const tokens = query.value.toLowerCase().split(/\s+/).filter(Boolean)
-  let rows = rowInfo.value.filter(x => {
-    if (tokens.some(t => !x.text.includes(t))) return false
-    if (fPick.value && x.skip) return false
-    if (fPick.value === 'fav' && x.g.pick !== 'fav') return false
-    if (fPick.value === 'dog' && x.g.pick !== 'dog') return false
-    if (fPick.value === 'home' && !x.pickHome) return false
-    if (fPick.value === 'away' && x.pickHome) return false
-    if (fResult.value && x.outcome !== fResult.value) return false
-    if (fTen.value && (x.skip || x.pts < 10)) return false
-    if (fMoved.value && !x.moved) return false
-    return true
-  })
-  const s = SORTS[sortKey.value]
-  if (s) {
-    const [key, dir] = s
-    rows = [...rows].sort((a, b) => {
-      const p = key(a), q = key(b)
-      if (p == null && q == null) return a.i - b.i
-      if (p == null) return 1
-      if (q == null) return -1
-      return (p - q) * dir || a.i - b.i
-    })
-  }
-  return rows
+  const v = VIEWS[activeView.value]
+  const rows = rowInfo.value.filter(v.keep)
+  return v.sort ? [...rows].sort((a, b) => (a.skip - b.skip) || (b.pts - a.pts) || a.i - b.i) : rows
 })
-const flat = computed(() => sortKey.value !== 'time')
+const flat = computed(() => !!VIEWS[activeView.value].sort)
 // kickoff order: grouped by kickoff slot (Sunday 1:00 PM, Sunday 4:05 / 4:25 PM, ...)
 const groups = computed(() => groupByKickoff(visible.value, events.value))
-const activeFilters = computed(() => [fPick.value, fResult.value, fTen.value, fMoved.value].filter(Boolean).length)
-const isFiltered = computed(() => !!query.value.trim() || activeFilters.value > 0)
 
 // ---- list (default) or grid layout; grid is a desktop-only option ----
 const wideMq = window.matchMedia('(min-width: 900px)')
@@ -346,7 +312,6 @@ const layout = ref(saved('gamesLayout', 'list'))
 watch(layout, v => { try { localStorage.setItem('gamesLayout', v) } catch {} })
 const gridView = computed(() => wide.value && layout.value === 'grid' && !fixNames.value)
 
-function clearFilters() { query.value = ''; fPick.value = ''; fResult.value = ''; fTen.value = false; fMoved.value = false }
 
 // ---- totals + validation (email + already-sent games make up the week's 100) ----
 const picked = computed(() => games.value.filter(g => g.pick))
@@ -503,11 +468,14 @@ const popInfo = computed(() => {
     : new Date(ev.kickoff).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })
   const line = x.g.hasLine === false ? '' : !x.g.spread ? ' PK' : x.g.pick === 'fav' ? ` −${x.g.spread}` : ` +${x.g.spread}`
   const pick = x.skip ? 'No pick' : `${side(x.g.pick).abbr}${line} · ${x.pts} pts`
-  return { teams, when, pick, cls: segClass(x), label: segText(x) }
+  // the chance to cover, once there's something to say: the game's on, or the line has moved off the sheet's
+  const o = x.outcome === 'pending' && (ev?.state === 'in' || nowLines.value[x.i]?.changed) ? sideOdds(oddsFor(x.g), x.g.pick) : null
+  const chance = o && [`${pctText(o.cover)} to cover`, pushText(o)].filter(Boolean).join(' · ')
+  return { teams, when, pick, chance, cls: segClass(x), label: segText(x) }
 })
 async function goToGame(i) {
   pop.value = null
-  if (!visible.value.some(x => x.i === i)) clearFilters()
+  if (!visible.value.some(x => x.i === i)) view.value = 'all'
   await nextTick()
   const el = document.querySelector(`[data-game="${i}"]`)
   if (!el) return
@@ -638,6 +606,7 @@ const adjText = computed(() => [
               <span class="gp-when">{{ popInfo.when }}</span>
               <span v-if="popInfo.pick" class="gp-pick">{{ popInfo.pick }}</span>
             </span>
+            <span v-if="popInfo.chance" class="gp-chance">{{ popInfo.chance }}</span>
           </button>
         </div>
         <p v-if="!hasResults" class="wh-legend">
@@ -718,19 +687,12 @@ const adjText = computed(() => [
       </p>
 
       <section class="filterbar">
-        <div class="search">
-          <span aria-hidden="true">⌕</span>
-          <input v-model="query" type="search" placeholder="Search a team…" aria-label="Search a team" @keydown.esc="query = ''" />
-          <button v-if="query" type="button" class="search-x" aria-label="Clear search" @click="query = ''; $event.currentTarget.previousElementSibling.focus()">
-            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" /></svg>
+        <div class="views" role="group" aria-label="Show games">
+          <button v-for="p in viewPills" :key="p.id" type="button" :class="['vpill', p.id, { on: activeView === p.id }]"
+                  :aria-pressed="activeView === p.id" @click="pickView(p.id)">
+            <i v-if="p.id === 'live'" class="ldot"></i>{{ p.label }}<small v-if="p.id === 'live'">{{ p.n }}</small>
           </button>
         </div>
-        <select v-model="sortKey" aria-label="Sort games">
-          <option v-for="[v, t] in sortOptions" :key="v" :value="v">{{ t }}</option>
-        </select>
-        <button :class="['btn', 'ghost', { active: showFilters || activeFilters }]" @click="showFilters = !showFilters" aria-label="Filters">
-          ⚙ Filters <span v-if="activeFilters" class="count">{{ activeFilters }}</span>
-        </button>
         <div v-if="wide" class="layoutswitch" role="group" aria-label="Layout">
           <button :class="{ on: layout === 'list' }" :aria-pressed="layout === 'list'" title="List" @click="layout = 'list'">
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5h12M2 8h12M2 12.5h12" /></svg>
@@ -741,27 +703,6 @@ const adjText = computed(() => [
         </div>
       </section>
 
-      <section v-if="showFilters" class="chips">
-        <div class="chipgroup">
-          <span class="cg">My pick</span>
-          <button v-for="[v, t] in PICK_CHIPS" :key="v" :class="['chip', { on: fPick === v }]" @click="fPick = fPick === v ? '' : v">{{ t }}</button>
-        </div>
-        <div v-if="hasResults" class="chipgroup">
-          <span class="cg">Result</span>
-          <button v-for="[v, t] in RESULT_CHIPS" :key="v" :class="['chip', { on: fResult === v }]" @click="fResult = fResult === v ? '' : v">{{ t }}</button>
-        </div>
-        <div class="chipgroup">
-          <span class="cg">Other</span>
-          <button :class="['chip', { on: fTen }]" @click="fTen = !fTen">10+ points</button>
-          <button :class="['chip', { on: fMoved }]" @click="fMoved = !fMoved">Line moved</button>
-        </div>
-      </section>
-
-      <p v-if="isFiltered" class="showing">
-        Showing {{ visible.length }} of {{ games.length }} games
-        <button class="link" @click="clearFilters">Clear filters</button>
-      </p>
-
       <section v-if="gridView" class="gamegrid">
         <GameTile
           v-for="x in visible"
@@ -771,6 +712,7 @@ const adjText = computed(() => [
           :events="events"
           :now="nowLines[x.i]"
           :result="resultFor(x.i)"
+          :odds="oddsFor(x.g)"
           :readonly="!editMode"
           :editable="!editMode"
           @edit="editFromCard"
@@ -787,6 +729,7 @@ const adjText = computed(() => [
           :events="events"
           :now="nowLines[x.i]"
           :result="resultFor(x.i)"
+          :odds="oddsFor(x.g)"
           :teams="teams"
           :editing="fixNames && editMode"
           :readonly="!editMode"
@@ -807,6 +750,7 @@ const adjText = computed(() => [
           :events="events"
           :now="nowLines[x.i]"
           :result="resultFor(x.i)"
+          :odds="oddsFor(x.g)"
           :teams="teams"
           :editing="fixNames && editMode"
           :readonly="!editMode"
@@ -816,7 +760,6 @@ const adjText = computed(() => [
           :split="splitFor(x.g)"
         />
       </section>
-      <p v-if="!visible.length" class="empty">No games match. <button class="link" @click="clearFilters">Clear filters</button></p>
 
       <!-- sticky total: only while editing -->
       <footer v-if="editMode" :class="['totalbar', state]">

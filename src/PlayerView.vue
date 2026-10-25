@@ -126,6 +126,7 @@ const resultFor = i => (score.value?.games?.[i]?.outcome === 'hidden' ? null : s
               :game="x.g"
               :events="events"
               :result="resultFor(x.i)"
+              :odds="w.odds?.[x.g.eventId]"
               :pool="poolFor(x.g)"
               :other-player="!isMe"
               readonly

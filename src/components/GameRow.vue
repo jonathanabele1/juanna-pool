@@ -7,6 +7,7 @@ import PoolDialog from './PoolDialog.vue'
 import { coverNow, resolveGame } from '../lines.js'
 import { clampPoints, stepPoints, MIN_PTS, MAX_PTS } from '../points.js'
 import { openOne, closeOpen } from '../dismiss.js'
+import { sideOdds, pctText, pushText, tone } from '../odds.js'
 
 const props = defineProps({
   game: Object, events: Array, now: Object, result: Object,
@@ -18,6 +19,7 @@ const props = defineProps({
   split: Object,      // DraftKings public betting
   otherPlayer: Boolean, // someone else's picks: the pool bar doesn't compare against them
   editable: Boolean,  // your saved week in view mode: show an Edit button on the card
+  odds: Object,       // the favorite's cover odds, { fav, push }, while the game is on or before it starts
 })
 defineEmits(['edit'])
 
@@ -141,6 +143,20 @@ const poolSides = computed(() => sides.value.map(s => ({
   logo: s.team?.logo, spread: spreadOf(s.key), color: s.team?.color, alternateColor: s.team?.alternateColor,
 })))
 const poolStatus = computed(() => (final.value ? finalText.value : live.value ? clockText.value : ''))
+
+// ---- the chance your pick covers ----
+// live: next to the down and distance. Before kickoff it's only news when the line has moved off the sheet's
+// (otherwise it's a coin flip), so it rides on the DraftKings pill: your side's chance, or the side the move helps.
+const sideName = key => sideAbbr(key) || (g.value[key] || '').toUpperCase()
+const liveChance = computed(() => (live.value && !g.value.hidden ? sideOdds(props.odds, g.value.pick) : null))
+const chanceTitle = computed(() => `Chance ${sideName(g.value.pick)} ${spreadOf(g.value.pick)} covers, from the score, clock and field position (NFL games 2012–2025)`)
+const moveChance = computed(() => {
+  if (live.value || final.value || !props.now?.changed || !props.odds || g.value.hidden) return null
+  const key = g.value.pick || (props.odds.fav >= sideOdds(props.odds, 'dog').cover ? 'fav' : 'dog')
+  const c = sideOdds(props.odds, key).cover
+  if (Math.round(c * 100) === 50) return null
+  return { text: `${sideName(key)} ${pctText(c)}`, title: `With the line at ${props.now.text}, ${sideName(key)} ${spreadOf(key)} on the sheet covers ${pctText(c)} of the time` }
+})
 </script>
 
 <template>
@@ -174,6 +190,7 @@ const poolStatus = computed(() => (final.value ? finalText.value : live.value ? 
         DraftKings {{ now?.text }}
         <b v-if="now?.delta">{{ deltaText(now.delta) }}</b>
         <b v-else-if="now?.flipped">flipped</b>
+        <span v-if="moveChance" class="move-chance" :title="moveChance.title">{{ moveChance.text }}</span>
       </span>
     </header>
 
@@ -217,13 +234,20 @@ const poolStatus = computed(() => (final.value ? finalText.value : live.value ? 
       :stats="teams?.[peekSide.team?.abbr] || null"
     />
 
-    <p v-if="live && (info?.down || info?.lastPlay)" class="situation">
-      <span v-if="info.down" :class="['down', { rz: info.redZone }]">
-        <b v-if="info.possession">{{ info.possession }} ball ·</b> {{ info.down }}<template v-if="info.spot"> at {{ info.spot }}</template>
-        <em v-if="info.redZone">Red zone</em>
-      </span>
-      <span v-if="info.lastPlay" class="last" :title="info.lastPlay">{{ info.lastPlay }}</span>
-    </p>
+    <div v-if="live && (info?.down || info?.lastPlay || liveChance)" class="situation">
+      <div class="sit">
+        <span v-if="info?.down" :class="['down', { rz: info.redZone }]">
+          <b v-if="info.possession">{{ info.possession }} ball ·</b> {{ info.down }}<template v-if="info.spot"> at {{ info.spot }}</template>
+          <em v-if="info.redZone">Red zone</em>
+        </span>
+        <span v-if="info?.lastPlay" class="last" :title="info.lastPlay">{{ info.lastPlay }}</span>
+      </div>
+      <div v-if="liveChance" :class="['chance', tone(liveChance.cover)]" :title="chanceTitle">
+        <b>{{ pctText(liveChance.cover) }}</b>
+        <small>to cover</small>
+        <small v-if="pushText(liveChance)" class="push">{{ pushText(liveChance) }}</small>
+      </div>
+    </div>
 
     <PoolBar
       v-if="pool || split"
@@ -308,7 +332,16 @@ const poolStatus = computed(() => (final.value ? finalText.value : live.value ? 
 .game.final.is-loss { box-shadow: inset 5px 0 0 #ef4444, 0 1px 2px #0000000d; }
 .game.final { padding-left: 17px; }
 
-.situation { display: flex; flex-direction: column; gap: 3px; margin: 10px 0 0; padding: 8px 12px; border-radius: 12px; background: #f8fafc; font-size: .8rem; color: #334155; }
+.situation { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; margin: 10px 0 0; padding: 8px 12px; border-radius: 12px; background: #f8fafc; font-size: .8rem; color: #334155; }
+.sit { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+/* the chance your pick covers: the number does the talking, colored only when it's leaning hard one way */
+.chance { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.chance b { font-size: 1.2rem; font-weight: 800; letter-spacing: -.02em; color: #0f172a; }
+.chance small { font-size: .6rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #94a3b8; white-space: nowrap; }
+.chance small.push { margin-top: 2px; color: #a16207; }
+.chance.good b { color: #15803d; }
+.chance.bad b { color: #b91c1c; }
+.move-chance { margin-left: 7px; padding-left: 7px; border-left: 1px solid currentColor; font-variant-numeric: tabular-nums; }
 .situation .down { font-weight: 600; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .situation .down em { font-style: normal; font-size: .64rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; background: #fee2e2; color: #b91c1c; }
 .situation .last { color: #64748b; font-size: .76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

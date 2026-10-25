@@ -77,7 +77,9 @@ CREATE TABLE IF NOT EXISTS results (
   state TEXT,
   home_abbr TEXT, away_abbr TEXT,
   home_score INTEGER, away_score INTEGER,
-  kickoff TEXT
+  kickoff TEXT,
+  line TEXT,  -- JSON {favorite, spread}: the market line, last seen before kickoff (ESPN drops it once a game starts)
+  live TEXT   -- JSON clock / possession / field position while the game is on (espn._live), else NULL
 );
 -- DraftKings public betting splits, last seen before kickoff
 CREATE TABLE IF NOT EXISTS splits (
@@ -144,6 +146,9 @@ def init() -> None:
                 c.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
         if "kickoff" not in _columns(c, "results"):
             c.execute("ALTER TABLE results ADD COLUMN kickoff TEXT")
+        for col in ("line", "live"):
+            if col not in _columns(c, "results"):
+                c.execute(f"ALTER TABLE results ADD COLUMN {col} TEXT")
 
 
 init()
@@ -429,15 +434,22 @@ def set_league_emails(by_week: dict[int, str]) -> None:
 def save_results(week: int, events: list[dict]) -> None:
     rows = [
         (e["id"], week, e["state"], e["home"]["abbr"], e["away"]["abbr"],
-         e["scores"]["home"], e["scores"]["away"], e.get("kickoff"))
+         e["scores"]["home"], e["scores"]["away"], e.get("kickoff"),
+         json.dumps(e["line"]) if e["state"] == "pre" and e.get("line") else None,
+         json.dumps(e["live"]) if e.get("live") else None)
         for e in events
     ]
     teams = {t["abbr"]: (t["abbr"], t["location"], t["name"], t["logo"], t["color"])
              for e in events for t in (e["home"], e["away"]) if t["abbr"]}
     with conn() as c:
-        c.executemany("""INSERT OR REPLACE INTO results
-                         (event_id, week, state, home_abbr, away_abbr, home_score, away_score, kickoff)
-                         VALUES (?,?,?,?,?,?,?,?)""", rows)
+        c.executemany("""INSERT INTO results
+                         (event_id, week, state, home_abbr, away_abbr, home_score, away_score, kickoff, line, live)
+                         VALUES (?,?,?,?,?,?,?,?,?,?)
+                         ON CONFLICT(event_id) DO UPDATE SET
+                           week=excluded.week, state=excluded.state, home_abbr=excluded.home_abbr,
+                           away_abbr=excluded.away_abbr, home_score=excluded.home_score,
+                           away_score=excluded.away_score, kickoff=excluded.kickoff,
+                           line=COALESCE(excluded.line, results.line), live=excluded.live""", rows)
         # drop the week label from games an older bug filed under this week (results stay, keyed by event)
         ids = [e["id"] for e in events]
         c.execute(f"UPDATE results SET week=NULL WHERE week=? AND event_id NOT IN ({','.join('?' * len(ids))})",
@@ -448,7 +460,8 @@ def save_results(week: int, events: list[dict]) -> None:
 def get_results(real: bool = False) -> dict[str, dict]:
     """Every game's last-known state and score (with an admin's fake scores in test live mode, unless `real`)."""
     with conn() as c:
-        rows = {r["event_id"]: dict(r) for r in c.execute("SELECT * FROM results")}
+        rows = {r["event_id"]: {**dict(r), "line": json.loads(r["line"] or "null"), "live": json.loads(r["live"] or "null")}
+                for r in c.execute("SELECT * FROM results")}
     return rows if real else demo.results(rows)
 
 
@@ -470,7 +483,8 @@ def stored_events(week: int, since: str) -> list[dict]:
                          "color": r[f"{p}_color"], "record": None}
     return [{"id": r["event_id"], "kickoff": r["kickoff"], "state": r["state"], "detail": "",
              "home": team(r, "h"), "away": team(r, "a"),
-             "scores": {"home": r["home_score"], "away": r["away_score"]}, "line": None} for r in rows]
+             "scores": {"home": r["home_score"], "away": r["away_score"]},
+             "line": json.loads(r["line"]) if r["line"] else None} for r in rows]
 
 
 def save_splits(by_event: dict[str, dict]) -> None:

@@ -78,7 +78,19 @@ def user_week(user_id: int, n: int) -> dict:
         "adjNote": p["adjNote"] if p else "",
         "updatedAt": p["updatedAt"] if saved else None,
         "score": scored(n, games, adjustment) if saved else None,
+        "odds": week_odds(w["games"]),
     }
+
+
+def week_odds(lines: list[dict]) -> dict[str, dict]:
+    """Each game's cover odds for the favorite, by ESPN event (games on now or not started; see cover.py)."""
+    results = db.get_results()
+    out = {}
+    for g in lines:
+        o = scoring.game_odds(g, results) if g.get("eventId") else None
+        if o:
+            out[str(g["eventId"])] = o
+    return out
 
 
 def in_league(u: dict, viewer_id: int | None) -> bool:

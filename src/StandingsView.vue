@@ -2,6 +2,7 @@
 // The whole pool: this week's leaderboard (live while games are on), then the season table. Tap a player to see their picks.
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { getWeekStandings, getSeasonStandings } from './api.js'
+import { pctText } from './odds.js'
 
 const props = defineProps({ currentWeek: Number })
 const emit = defineEmits(['open'])
@@ -52,12 +53,23 @@ const statusText = computed(() => {
   return `${g.value.final} of ${g.value.total} final`
 })
 
-// Week columns: Score always; Live while games are on; Max and Live max while games are left to play
-// (Live max: games on now end as they stand, every game not started covers). Tap a header to sort by it,
-// tap it again to flip. Default: Live while games are on, otherwise Score.
-const COLS = { score: 'Score', projected: 'Live', max: 'Max', liveMax: 'Live max' }
+// Week columns: Score always; Live while games are on; Win % while the week's still being decided; Max and Live max
+// while games are left to play (Live max: games on now end as they stand, every game not started covers; it makes
+// way for Win % on phones). Tap a header to sort by it, tap it again to flip. Default: Live while games are on,
+// otherwise Score.
+const COLS = { score: 'Score', projected: 'Live', win: 'Win %', max: 'Max', liveMax: 'Live max' }
 const anyPending = computed(() => rows.value.some(r => r.pending))
-const cols = computed(() => ['score', isLive.value && 'projected', anyPending.value && 'max', isLive.value && anyPending.value && 'liveMax'].filter(Boolean))
+const hasWin = computed(() => rows.value.some(r => r.win != null))
+const phoneMq = window.matchMedia('(max-width: 520px)')
+const phone = ref(phoneMq.matches)
+const onPhone = e => { phone.value = e.matches }
+onMounted(() => phoneMq.addEventListener('change', onPhone))
+onUnmounted(() => phoneMq.removeEventListener('change', onPhone))
+const cols = computed(() => ['score', isLive.value && 'projected', hasWin.value && 'win', anyPending.value && 'max',
+  isLive.value && anyPending.value && !(phone.value && hasWin.value) && 'liveMax'].filter(Boolean))
+// the simulation says never/certain only when it's settled (1 or 0); anything else stays off 0% and 100%
+const cell = (r, c) => (r[c] == null ? '—' : c !== 'win' ? r[c] : r[c] === 1 ? '100%' : r[c] === 0 ? '0%' : pctText(r[c]))
+const WIN_TITLE = 'Chance to finish first this week among the players here (record breaks a tie). Games on now play out at their cover odds; picks on games that haven’t started are still hidden, so those count as coin flips.'
 const sortKey = ref(null)
 const sortDir = ref(-1)
 const key = computed(() => (cols.value.includes(sortKey.value) ? sortKey.value : isLive.value ? 'projected' : 'score'))
@@ -158,7 +170,7 @@ const behind = r => seasonRows.value[0].total - r.total
             <span role="columnheader">Player</span>
             <button v-for="c in cols" :key="c" type="button" role="columnheader" :aria-sort="ariaSort(c)"
                     :class="['num', 'sort', { on: key === c }]" @click="sortBy(c)">
-              {{ COLS[c] }}<i class="arr" :class="{ up: key === c && sortDir > 0 }"></i>
+              <span :title="c === 'win' ? WIN_TITLE : null">{{ COLS[c] }}</span><i class="arr" :class="{ up: key === c && sortDir > 0 }"></i>
             </button>
           </div>
           <button
@@ -181,7 +193,7 @@ const behind = r => seasonRows.value[0].total - r.total
                 <template v-if="r.penalties"> · <span class="neg">−{{ r.penalties }}</span></template>
               </small>
             </span>
-            <span v-for="c in cols" :key="c" :class="['num', 'val', { on: key === c, neg: r[c] < 0 }]">{{ r[c] ?? '—' }}</span>
+            <span v-for="c in cols" :key="c" :class="['num', 'val', { on: key === c, neg: c !== 'win' && r[c] < 0, out: c === 'win' && r.win === 0 }]">{{ cell(r, c) }}</span>
           </button>
           <p v-if="data.noPicks.length" class="nopicks">No picks: {{ data.noPicks.join(', ') }}</p>
         </div>
@@ -303,6 +315,7 @@ button.tr:focus-visible { outline: 2px solid #93c5fd; outline-offset: -2px; }
 .val { font-size: 1rem; font-weight: 700; color: #94a3b8; }
 .val.on { font-size: 1.12rem; font-weight: 800; color: #0f172a; }
 .val.neg { color: #f87171; } .val.on.neg { color: #b91c1c; }
+.val.out { color: #cbd5e1; }
 .score { font-weight: 800; font-size: 1.1rem; color: #0f172a; }
 .season .score { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
 .season .score small { font-size: .7rem; display: inline-flex; align-items: center; gap: 4px; }

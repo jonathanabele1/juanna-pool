@@ -82,13 +82,16 @@ def scoreboard(data: dict) -> dict:
         _fake[e["id"]] = {"event_id": e["id"], "week": data["week"], "state": e["state"],
                           "home_abbr": e["home"]["abbr"], "away_abbr": e["away"]["abbr"],
                           "home_score": e["scores"]["home"], "away_score": e["scores"]["away"],
-                          "kickoff": e["kickoff"]}
+                          "kickoff": e["kickoff"], "line": e.get("line"), "live": e["live"]}
     data["demo"] = True
     return data
 
 
 def results(real: dict[str, dict]) -> dict[str, dict]:
-    return {**real, **_fake} if active() else real
+    if not active():
+        return real
+    # ESPN drops a game's line once it really kicks off, so a fake game keeps the one saved before that
+    return {**real, **{k: {**f, "line": f["line"] or (real.get(k) or {}).get("line")} for k, f in _fake.items()}}
 
 
 def picks(user_id: int, stored: dict, real_results: dict[str, dict]) -> dict:

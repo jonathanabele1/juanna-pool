@@ -4,7 +4,7 @@ Another player's pick on a game stays hidden until that game kicks off (for ever
 """
 from fastapi import APIRouter, Depends, HTTPException
 
-from . import auth, db, scoring, splits
+from . import auth, db, scoring, splits, winchance
 from .weeks import in_league, season, started, user_week, week_entries, week_summaries
 
 router = APIRouter(prefix="/api")
@@ -69,6 +69,7 @@ def week_standings(n: int, me: dict = Depends(auth.current_user)):
     w, results, entries = week_entries(n, me["id"])
     lines = (w or {}).get("games") or []
     states = [(results.get(str(g.get("eventId") or "")) or {}).get("state") for g in lines]
+    win = winchance.chances(lines, results, entries) or {}
     rows = []
     for e in entries:
         s = e["score"]
@@ -78,6 +79,7 @@ def week_standings(n: int, me: dict = Depends(auth.current_user)):
             "wins": s["wins"], "losses": s["losses"], "pushes": s["pushes"],
             "live": s["live"], "pending": s["pending"], "complete": s["complete"],
             "penalties": s["penaltyTotal"], "adjustment": s["adjustment"],
+            "win": win.get(e["user"]["id"]),  # chance to win the week, while it's still being decided
         })
     rows.sort(key=lambda r: (-r["projected"], -r["score"], r["name"].lower()))
     for r, rank, proj in zip(rows, _ranks(rows, "score"), _ranks(rows, "projected")):

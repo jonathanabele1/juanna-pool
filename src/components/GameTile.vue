@@ -3,6 +3,7 @@
 import { computed, ref } from 'vue'
 import { coverNow, resolveGame } from '../lines.js'
 import { pct } from '../pool.js'
+import { sideOdds, pctText } from '../odds.js'
 import { clampPoints, stepPoints, MIN_PTS, MAX_PTS } from '../points.js'
 import PoolDialog from './PoolDialog.vue'
 
@@ -12,6 +13,7 @@ const props = defineProps({
   pool: Object,       // how the pool picked this game (revealed at kickoff)
   split: Object,      // DraftKings public betting
   editable: Boolean,  // your saved week in view mode: show an Edit button on the card
+  odds: Object,       // the favorite's cover odds, { fav, push }, while the game is on or before it starts
 })
 defineEmits(['edit'])
 
@@ -69,7 +71,11 @@ const when = computed(() => {
 })
 const statusText = computed(() => {
   if (outcome.value) return { win: `Covered +${props.result?.earned ?? g.value.points}`, loss: 'Missed', push: `Push +${num(props.result?.earned ?? g.value.points / 2)}` }[outcome.value]
-  if (liveStatus.value) return liveStatus.value === 'push' ? 'On the number' : liveStatus.value === 'win' ? `Covering by ${num(cover.value.margin)}` : `Short by ${num(cover.value.margin)}`
+  if (liveStatus.value) {
+    const now = liveStatus.value === 'push' ? 'On the number' : liveStatus.value === 'win' ? `Covering by ${num(cover.value.margin)}` : `Short by ${num(cover.value.margin)}`
+    const o = sideOdds(props.odds, g.value.pick)
+    return o ? `${now} · ${pctText(o.cover)}` : now
+  }
   return ''
 })
 

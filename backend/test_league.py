@@ -76,10 +76,16 @@ class League(unittest.TestCase):
         self.assertIsNone(w["games"][2]["points"])
         self.assertEqual(w["score"]["games"][2], {"outcome": "hidden"})
         self.assertEqual(w["hiddenCount"], 1)
+        self.assertNotIn("odds", w["score"]["games"][2])
 
     def test_my_own_picks_are_never_hidden(self):
         w = self.client().get(f"/api/players/{self.me['id']}/weeks/6").json()
         self.assertEqual([g["pick"] for g in w["games"]], ["fav", "fav", "dog"])
+
+    def test_week_has_game_odds(self):
+        w = self.client().get("/api/weeks/6").json()
+        self.assertEqual(set(w["odds"]), {"3"})  # the live game has no clock saved, the final one is done
+        self.assertAlmostEqual(w["odds"]["3"]["fav"], 0.5, places=2)  # no market line: the sheet's is an even bet
 
     def test_week_standings_live_projection(self):
         s = self.client().get("/api/standings/week/6").json()
@@ -94,6 +100,9 @@ class League(unittest.TestCase):
         self.assertEqual(rows["Me"]["projectedRank"], 1)
         self.assertEqual(s["noPicks"], ["Cal"])
         self.assertEqual(s["games"], {"total": 3, "live": 1, "final": 1})
+        # chance to win: everyone's still alive, and it adds up
+        self.assertAlmostEqual(sum(r["win"] for r in s["rows"]), 1, delta=0.01)
+        self.assertTrue(all(0 < r["win"] < 1 for r in s["rows"]))
 
     def test_pool_split_only_for_started_games(self):
         p = self.client().get("/api/weeks/6/pool").json()

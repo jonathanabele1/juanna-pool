@@ -5,6 +5,8 @@ There are no automatic penalties; the commissioner enters any penalty as an adju
 """
 from collections import defaultdict
 
+from . import cover
+
 LOY = 50
 
 
@@ -21,7 +23,8 @@ def _result(g: dict, results: dict) -> dict | None:
     fav_home = res["home_abbr"] == g["favAbbr"]
     fav = res["home_score"] if fav_home else res["away_score"]
     dog = res["away_score"] if fav_home else res["home_score"]
-    out = {"state": res["state"], "fav": fav, "dog": dog, "margin": None, "liveMargin": None}
+    out = {"state": res["state"], "fav": fav, "dog": dog, "margin": None, "liveMargin": None,
+           "live": res.get("live"), "line": res.get("line")}
     if fav is not None and dog is not None:
         m = fav - dog - float(g.get("spread") or 0)  # >0: favorite covers
         if res["state"] == "post":
@@ -29,6 +32,58 @@ def _result(g: dict, results: dict) -> dict | None:
         elif res["state"] == "in":
             out["liveMargin"] = m
     return out
+
+
+def _seconds_left(live: dict | None) -> tuple[float, bool]:
+    """(seconds on the game clock, in overtime) from ESPN's period and clock; before kickoff, the whole game."""
+    period = (live or {}).get("period") or 0
+    if not period:
+        return cover.GAME, False
+    try:
+        m, _, sec = (live.get("clock") or "0:00").rpartition(":")
+        clock = int(m or 0) * 60 + float(sec)
+    except ValueError:
+        clock = 0
+    return (clock, True) if period > 4 else ((4 - period) * 900 + clock, False)
+
+
+def _to_endzone(live: dict) -> float | None:
+    """Yards the team with the ball has to go, from ESPN's spot ("DET 27" is DET's own 27, "50" midfield)."""
+    team, _, yard = (live.get("spot") or "").rpartition(" ")
+    if not yard.isdigit() or not live.get("possession"):
+        return None
+    return 50 if yard == "50" else 100 - int(yard) if team == live["possession"] else int(yard)
+
+
+def pick_odds(g: dict, r: dict) -> dict | None:
+    """Chance a pick covers / pushes, for a game that's on now or hasn't started (see cover.py)."""
+    if r["state"] not in ("pre", "in") or not g.get("dogAbbr"):
+        return None
+    fav_side = g.get("pick") == "fav"
+    side = g["favAbbr"] if fav_side else g["dogAbbr"]
+    spread = float(g.get("spread") or 0)
+    need = spread if fav_side else -spread
+    live = r["live"] if r["state"] == "in" else None
+    margin = 0
+    if r["state"] == "in":
+        if not live or r["fav"] is None or r["dog"] is None:
+            return None
+        margin = r["fav"] - r["dog"] if fav_side else r["dog"] - r["fav"]
+    line = r.get("line")  # the market's closing line; without one the sheet's stands in
+    expected = need if not line else 0.0 if not line.get("favorite") else (
+        float(line["spread"]) if line["favorite"] == side else -float(line["spread"]))
+    seconds, ot = _seconds_left(live)
+    possession = (live or {}).get("possession")
+    o = cover.odds(margin, need, seconds, ot=ot, has_ball=None if not possession else possession == side,
+                   yardline=_to_endzone(live) if live else None, expected=expected)
+    return {"cover": round(o["cover"], 3), "push": round(o["push"], 3)}
+
+
+def game_odds(g: dict, results: dict) -> dict | None:
+    """The favorite's chance to cover (and push) on a game that's on now or hasn't started: {fav, push}."""
+    r = _result(g, results)
+    o = r and pick_odds({**g, "pick": "fav"}, r)
+    return {"fav": o["cover"], "push": o["push"]} if o else None
 
 
 def score_week(week: dict, results: dict) -> dict:
@@ -63,6 +118,9 @@ def score_week(week: dict, results: dict) -> dict:
                 mine = r["liveMargin"] if g.get("pick") == "fav" else -r["liveMargin"]
                 entry["liveMargin"] = mine
                 entry["live"] = "push" if mine == 0 else "win" if mine > 0 else "loss"
+            odds = pick_odds(g, r)
+            if odds:
+                entry["odds"] = odds
         picked.append({**g, "points": pts, **entry})
         per_game.append(entry)
 

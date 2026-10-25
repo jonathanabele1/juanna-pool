@@ -15,6 +15,9 @@
 ## Picking
 - Every game starts with no pick. Tap a team to pick it; tap it again to clear the pick. Points can only be
   set on a picked game.
+- A row of pills above the games picks what to show: **All** (kickoff order, the default), **Live** (with a count),
+  **Pending** (not kicked off), **Final**, **Top points** (every game, your biggest picks first), and while editing
+  **No pick** (open games still to pick). A pill only shows while it has games; tap the active pill again for All.
 - While editing, each card has quick presets (10, 20, ★ LOY) next to the − / + stepper. Tapping a preset again
   goes back to 2.
 - **Press and hold (or double-click) a team** for a small card with its season so far, from the weeks before this
@@ -44,6 +47,38 @@
 - Weekly score = points on covered picks + half points on pushes + manual adjustment.
 - No penalties are applied automatically. Any penalty (over 100, four double-digits, skipped games, late picks, out-of-order, etc.) is entered by hand in the week's **Adjustment** field on the Admin page.
 - Final results are cached in the database, so past weeks still score if ESPN is unreachable.
+
+## Cover odds
+- The chance a pick covers the **sheet** spread, from the score, the clock, who has the ball and where
+  (`backend/cover.py`). Shown only where it says something:
+  - **Live game card**: on the right of the down-and-distance box ("41% to cover", plus the push chance when it's 5%
+    or more). Green at 70%+, red at 30% or less.
+  - **Before kickoff**: only when DraftKings' line has moved off the sheet's (otherwise it's a coin flip). The
+    DraftKings pill adds your side's chance, or the side the move helps if you haven't picked ("KC 46%").
+  - **League → Week**: a *Win %* column while the week is still being decided (see below).
+  - The pill popover on the week card and the desktop grid tiles show the same chance.
+- The week (`GET /api/weeks/{n}`) carries `odds: {eventId: {fav, push}}`, the favorite's chance per game, so the
+  number follows your pick while you edit. Each scored pick also gets `odds: {cover, push}`.
+
+## Win % (League → Week)
+- Each player's chance to finish first this week among the players in the app (not the whole Juanna pool). Record
+  breaks a tie, then it's split, like the weekly prize.
+- `backend/winchance.py` plays the rest of the week out 3,000 times. A game on now ends by its cover odds, and every
+  pick on it pays off from that same result.
+- **Hidden picks stay hidden.** On games that haven't kicked off, nobody's actual picks are used. Otherwise saving
+  different picks and watching your Win % move would give away a friend's side. Each player's points on those games
+  (the total Max already shows) are spread evenly over them, each a coin flip. A pick counts exactly once its game
+  kicks off.
+- It only says 0% or 100% when it's settled: Max can't reach the leader's score, or no one's Max can reach yours.
+  Otherwise a long shot shows as <1%.
+- On phones, Win % takes Live max's place (five number columns don't fit). Desktop shows both.
+- The odds come from `backend/cover_table.json`: how NFL margins actually moved over the rest of a game from each spot,
+  2012–2025 play-by-play (nflverse), so 3s and 7s, kneel-downs and pushes come out right. Rebuild it with
+  `scripts/build_cover_table.py`, which also scores it on held-out seasons.
+- The market line is saved for each game before kickoff (ESPN drops it once a game starts) and is treated as an even
+  bet. So before kickoff, a sheet line that matches the market is 50%, and the odds move off 50% only when the market
+  has moved since the sheet (e.g. −2.5 on the sheet with the market at −3 ≈ 54%). With no saved line, the sheet stands in.
+- It's an estimate. On 2024–25 games it was within about 2 points of what actually happened at every level of confidence.
 
 ## Season stats
 Total, weekly average, record vs spread, best/worst week, points earned vs wagered, cover rate by confidence tier,
