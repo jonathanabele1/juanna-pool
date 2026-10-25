@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { parseSpreads, parseWeek } from './parse.js'
 import { currentLine, resolveGame } from './lines.js'
 import { getLines, getWeek, saveWeek, deleteWeek, uploadImage, getTeamCovers, getPool, getSplits } from './api.js'
@@ -355,8 +355,8 @@ const pct = computed(() => Math.min(100, (total.value / TARGET) * 100))
 const pickName = g => (g.pick === 'fav' ? g.fav : g.dog)
 const warnings = computed(() => {
   const w = []
-  if (total.value > TARGET) w.push(`Over 100 by ${total.value - TARGET}: −${Math.ceil((total.value - TARGET) / 10) * 20} penalty`)
-  if (doubleDigits.value === 4) w.push('Exactly 4 double-digit picks: −20 penalty')
+  if (total.value > TARGET) w.push(`Over 100 by ${total.value - TARGET}`)
+  if (doubleDigits.value === 4) w.push('Exactly 4 double-digit picks')
   for (const g of picked.value) {
     const p = Number(g.points)
     if (!(Number.isInteger(p) && ((p >= 2 && p <= 20) || p === 50))) w.push(`${pickName(g)}: ${g.points} not allowed (2–20, or 50)`)
@@ -409,9 +409,13 @@ const payload = computed(() => ({
 }))
 const dirty = computed(() => games.value.length > 0 && (JSON.stringify(payload.value) !== snapshot.value || !!pendingFile.value))
 
+const blocker = computed(() =>
+  total.value > TARGET ? `Over 100 by ${total.value - TARGET}. Take points off before saving.`
+    : doubleDigits.value === 4 ? 'Exactly 4 double-digit picks isn\'t allowed. Use 3 or 5+.' : '')
 async function save() {
-  saving.value = true
   saveError.value = ''
+  if (blocker.value) { saveError.value = blocker.value; return }
+  saving.value = true
   try {
     if (pendingFile.value) {
       await uploadImage(props.week, pendingFile.value)
@@ -452,7 +456,19 @@ const segText = x => (x.skip ? `${x.g.fav} / ${x.g.dog}: ${OUTCOME_TEXT[x.outcom
 const savedLabel = computed(() => (savedAt.value ? new Date(savedAt.value.replace(' ', 'T') + 'Z').toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''))
 
 function startEdit() { editMode.value = true; tab.value = 'games' }
+// Switching modes adds/removes things above the games; keep this card where it was on screen
+async function keepInPlace(card, fn) {
+  const before = card?.getBoundingClientRect().top
+  fn()
+  await nextTick()
+  if (card?.isConnected && before != null) window.scrollBy(0, card.getBoundingClientRect().top - before)
+}
+const editFromCard = card => keepInPlace(card, startEdit)
+// Cancel in the bottom bar: undo unsaved changes without losing your place in the list
+const firstCardOnScreen = () => [...document.querySelectorAll('article.game, article.tile')].find(a => a.getBoundingClientRect().bottom > 0)
+const cancelFromBar = () => keepInPlace(firstCardOnScreen(), cancelEdit)
 function cancelEdit() {
+  saveError.value = ''
   pendingFile.value = null
   confirmDelete.value = false
   fixNames.value = false
@@ -585,6 +601,7 @@ const adjText = computed(() => [
         <span>You have unsaved updates to this week.</span>
         <button class="btn primary sm" :disabled="saving" @click="save()">{{ saving ? 'Saving…' : 'Save' }}</button>
       </p>
+      <p v-if="!editMode && dirty && saveError" class="err">{{ saveError }}</p>
 
       <!-- edit tools: admins only, while editing -->
       <section v-if="editMode && isAdmin" class="edittools">
@@ -677,6 +694,8 @@ const adjText = computed(() => [
             :now="nowLines[x.i]"
             :result="resultFor(x.i)"
             :readonly="!editMode"
+            :editable="!editMode"
+            @edit="editFromCard"
             :pool="poolFor(x.g)"
             :split="splitFor(x.g)"
           />
@@ -692,6 +711,8 @@ const adjText = computed(() => [
             :ats="ats"
             :editing="fixNames && editMode"
             :readonly="!editMode"
+            :editable="!editMode"
+            @edit="editFromCard"
             :pool="poolFor(x.g)"
             :split="splitFor(x.g)"
             show-day
@@ -709,6 +730,8 @@ const adjText = computed(() => [
             :ats="ats"
             :editing="fixNames && editMode"
             :readonly="!editMode"
+            :editable="!editMode"
+            @edit="editFromCard"
             :pool="poolFor(x.g)"
             :split="splitFor(x.g)"
           />
@@ -764,8 +787,11 @@ const adjText = computed(() => [
             <template v-else>{{ -diff }} over</template>
           </span>
           <span class="dd">{{ picked.length }} of {{ games.length }} picked · {{ doubleDigits }} double-digit</span>
+          <span class="tb-actions">
           <button v-if="tab !== 'email'" class="btn ghost" @click="tab = 'email'">✉ Email</button>
+          <button v-if="hasSaved" class="btn ghost cancel" :disabled="saving" :title="dirty ? 'Undo your changes and go back to your saved picks' : 'Stop editing'" @click="cancelFromBar">Cancel</button>
           <button :class="['btn', dirty ? 'primary' : 'ghost']" :disabled="saving || !dirty" @click="save()">{{ saving ? '…' : dirty ? 'Save' : 'Saved ✓' }}</button>
+          </span>
         </div>
         <ul v-if="warnings.length && tab !== 'email'" class="warnings"><li v-for="w in warnings" :key="w">{{ w }}</li></ul>
         <p v-if="saveError" class="err">{{ saveError }}</p>

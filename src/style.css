@@ -2,6 +2,11 @@
 * { box-sizing: border-box; }
 body { margin: 0; }
 button, input, textarea { font: inherit; }
+/* phones: rapid taps on buttons (e.g. the points +/−) shouldn't double-tap-zoom; pinch zoom still works */
+button, a, input, select, textarea, label { touch-action: manipulation; }
+button { -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; }
+/* iOS zooms into any field under 16px when it's focused */
+@media (pointer: coarse) { input, select, textarea { font-size: 16px !important; } }
 
 .page { max-width: 780px; margin: 0 auto; padding: 20px 14px 190px; }
 .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
@@ -145,6 +150,9 @@ h2 small { text-transform: none; letter-spacing: 0; font-weight: 600; margin-lef
 .savebtns { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 .savebtns .btn { flex: 1 1 160px; }
 .tb-row .btn { padding: 8px 12px; }
+.tb-actions { display: flex; gap: 8px; margin-left: auto; }
+.btn.ghost.cancel { color: #b91c1c; border-color: #fecaca; }
+.btn.ghost.cancel:hover { background: #fef2f2; border-color: #fca5a5; }
 
 /* ---- view / edit mode ---- */
 .badge { display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 999px; font-size: .68rem; font-weight: 800; letter-spacing: .02em; margin-left: 8px; }

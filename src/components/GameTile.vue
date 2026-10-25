@@ -10,7 +10,9 @@ const props = defineProps({
   readonly: Boolean,  // view mode: nothing can be changed
   pool: Object,       // how the pool picked this game (revealed at kickoff)
   split: Object,      // DraftKings public betting
+  editable: Boolean,  // your saved week in view mode: show an Edit button on the card
 })
+defineEmits(['edit'])
 
 const DAY_NAMES = { Thurs: 'Thu', Tues: 'Tue', Wed: 'Wed', Fri: 'Fri', Sat: 'Sat', Sun: 'Sun', Mon: 'Mon' }
 
@@ -143,11 +145,20 @@ const poolTop = computed(() => {
         </div>
         <span v-else :class="['t-pts', { loy: isLoy }]"><template v-if="isLoy">★ </template>{{ g.points }}</span>
       </template>
+      <button v-if="editable" type="button" class="edit-btn" :aria-label="`Edit picks (${g.fav} vs ${g.dog})`" @click="$emit('edit', $event.currentTarget.closest('article'))">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 2.5l2.5 2.5L6 12.5H3.5V10z"/></svg> {{ g.pick ? 'Edit' : 'Pick' }}
+      </button>
     </footer>
   </article>
 </template>
 
 <style scoped>
+/* read-only card: quick way back into edit mode, so you don't have to scroll to the top */
+.edit-btn { display: inline-flex; align-items: center; gap: 4px; min-height: 26px; padding: 0 9px; border: 1px solid #dbeafe; border-radius: 999px; background: #fff; color: #2563eb; font-size: .72rem; font-weight: 700; cursor: pointer; transition: background .12s, border-color .12s; }
+.edit-btn:hover { background: #eff6ff; border-color: #bfdbfe; }
+.edit-btn:active { background: #dbeafe; }
+.edit-btn:focus-visible { outline: 2px solid #93c5fd; outline-offset: 1px; }
+.edit-btn svg { width: 12px; height: 12px; }
 .tile {
   background: #fff; border-radius: 14px; padding: 10px 10px 8px; display: flex; flex-direction: column; gap: 3px;
   box-shadow: 0 1px 2px #0000000d, 0 2px 10px #0000000a; transition: opacity .15s, box-shadow .15s;

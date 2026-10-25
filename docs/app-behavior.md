@@ -24,9 +24,8 @@
 
 ## Scoring (computed by the backend from ESPN final scores)
 - A pick wins if that side covers the **sheet** spread (not the live line). A push earns half the points (2½ for a 5).
-- Weekly score = points on covered picks + half points on pushes − penalties + manual adjustment.
-- Automatic penalties: over 100 (−20 per 10 over), exactly four double-digit picks (−20), skipped games (−20 each).
-- Late-pick penalties, out-of-order picks, etc. are entered by hand in the week's **Adjustment** field.
+- Weekly score = points on covered picks + half points on pushes + manual adjustment.
+- No penalties are applied automatically. Any penalty (over 100, four double-digits, skipped games, late picks, out-of-order, etc.) is entered by hand in the week's **Adjustment** field on the Admin page.
 - Final results are cached in the database, so past weeks still score if ESPN is unreachable.
 
 ## Season stats

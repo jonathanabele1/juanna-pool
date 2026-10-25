@@ -13,7 +13,9 @@ const props = defineProps({
   pool: Object,       // how the pool picked this game (revealed at kickoff)
   split: Object,      // DraftKings public betting
   otherPlayer: Boolean, // someone else's picks: the pool bar doesn't compare against them
+  editable: Boolean,  // your saved week in view mode: show an Edit button on the card
 })
+defineEmits(['edit'])
 
 const DAY_NAMES = { Thurs: 'Thu', Tues: 'Tue', Wed: 'Wed', Fri: 'Fri', Sat: 'Sat', Sun: 'Sun', Mon: 'Mon' }
 
@@ -215,11 +217,20 @@ const poolStatus = computed(() => (final.value ? finalText.value : live.value ? 
       <span v-if="g.pick" :class="['ptsbadge', { loy: isLoy }]">
         <template v-if="isLoy">★ Lock · </template>{{ g.points }} pts
       </span>
+      <button v-if="editable" type="button" class="edit-btn" :aria-label="`Edit picks (${g.fav} vs ${g.dog})`" @click="$emit('edit', $event.currentTarget.closest('article'))">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 2.5l2.5 2.5L6 12.5H3.5V10z"/></svg> {{ g.pick ? 'Edit' : 'Pick' }}
+      </button>
     </footer>
   </article>
 </template>
 
 <style scoped>
+/* read-only card: quick way back into edit mode, so you don't have to scroll to the top */
+.edit-btn { display: inline-flex; align-items: center; gap: 4px; min-height: 30px; padding: 0 11px; border: 1px solid #dbeafe; border-radius: 999px; background: #fff; color: #2563eb; font-size: .78rem; font-weight: 700; cursor: pointer; transition: background .12s, border-color .12s; }
+.edit-btn:hover { background: #eff6ff; border-color: #bfdbfe; }
+.edit-btn:active { background: #dbeafe; }
+.edit-btn:focus-visible { outline: 2px solid #93c5fd; outline-offset: 1px; }
+.edit-btn svg { width: 12px; height: 12px; }
 .pill.pastdue { background: #fef3c7; color: #92400e; }
 .game { background: #fff; border-radius: 18px; padding: 12px; box-shadow: 0 1px 2px #0000000d, 0 4px 14px #0000000a; transition: opacity .15s; }
 .game.nopick.ro { opacity: .6; }

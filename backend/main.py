@@ -73,9 +73,19 @@ def get_week(n: int, user: dict = Depends(auth.current_user)):
     return user_week(user["id"], n)
 
 
+def check_picks(picks) -> None:
+    """Picks that would break the pool's rules can't be saved: over 100, or exactly 4 double-digit picks."""
+    pts = [int(p.get("points") or 0) for p in picks if p.get("pick")]
+    if sum(pts) > 100:
+        raise HTTPException(400, f"Picks total {sum(pts)}: the week can't go over 100")
+    if sum(1 for x in pts if x >= 10) == 4:
+        raise HTTPException(400, "Exactly 4 double-digit picks isn't allowed")
+
+
 @app.put("/api/weeks/{n}")
 def put_week(n: int, body: WeekIn, user: dict = Depends(auth.current_user)):
     posted = [g.model_dump() for g in body.games]
+    check_picks(posted)  # before anything is written, so a rejected save changes nothing
     if user["isAdmin"]:
         db.save_lines(n, posted)  # the admin's sheet is everyone's sheet
     w = db.get_week(n)
@@ -85,6 +95,7 @@ def put_week(n: int, body: WeekIn, user: dict = Depends(auth.current_user)):
     by_key = {db.game_key(g): g for g in posted}
     picks = {key: {k: by_key[key][k] for k in db.PICK_FIELDS}
              for key in (db.game_key(g) for g in w["games"]) if key in by_key and by_key[key].get("pick")}
+    check_picks(picks.values())
     if user["isAdmin"]:
         db.save_picks(user["id"], n, picks, body.label, body.adjustment, body.adjNote)
     else:

@@ -88,8 +88,8 @@ class League(unittest.TestCase):
         self.assertEqual((rows["Me"]["score"], rows["Me"]["projected"]), (10, 15))
         # ann: NE +3 missed, ATL covering live (+8)
         self.assertEqual((rows["Ann"]["score"], rows["Ann"]["projected"]), (0, 8))
-        # bob: BUF covered (+4), skipped the live ATL game (−20)
-        self.assertEqual(rows["Bob"]["score"], 4 - 20)
+        # bob: BUF covered (+4), skipped the live ATL game (no automatic penalty)
+        self.assertEqual(rows["Bob"]["score"], 4)
         self.assertEqual([r["name"] for r in s["rows"]], ["Me", "Ann", "Bob"])
         self.assertEqual(rows["Me"]["projectedRank"], 1)
         self.assertEqual(s["noPicks"], ["Cal"])
@@ -103,9 +103,25 @@ class League(unittest.TestCase):
         self.assertEqual([x["name"] for x in g1["picks"]], ["Ann", "Me", "Bob"])  # most points first
         self.assertEqual(g3, {"key": "ev:3", "revealed": False})
 
+    def test_save_blocks_over_100_and_four_double_digits(self):
+        lines = [{"fav": f, "dog": d, "spread": 3} for f, d in zip(["kc", "phi", "det", "bal", "sf", "min"], ["lv", "nyg", "chi", "cle", "ari", "car"])]
+        db.save_lines(7, lines)
+        c = TestClient(self.app)
+        c.post("/api/auth/login", json={"username": "cal", "password": "secret1"}).raise_for_status()
+        put = lambda *pts: c.put("/api/weeks/7", json={"games": [
+            {**g, "pick": "fav" if p else None, "points": p or 2} for g, p in zip(lines, pts)]})
+        r = put(50, 20, 20, 5, 5, 5)          # 105
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("over 100", r.json()["detail"])
+        r = put(20, 20, 20, 20, 2, 2)         # 84, exactly 4 double digits
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("4 double-digit", r.json()["detail"])
+        self.assertEqual(put(20, 20, 20, 20, 10, 10).status_code, 200)  # 100, five double digits
+        self.assertEqual(put(50, 20, 20, 5, 5).status_code, 200)        # 100, three double digits
+
     def test_season_standings(self):
         rows = self.client().get("/api/standings/season").json()["rows"]
-        self.assertEqual([(r["name"], r["rank"], r["total"]) for r in rows], [("Me", 1, 10), ("Ann", 2, 0), ("Bob", 3, -16)])
+        self.assertEqual([(r["name"], r["rank"], r["total"]) for r in rows], [("Me", 1, 10), ("Bob", 2, 4), ("Ann", 3, 0)])
 
     def test_players_list(self):
         names = [p["displayName"] for p in self.client().get("/api/players").json()]

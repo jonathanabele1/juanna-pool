@@ -1,6 +1,7 @@
 """Pool scoring: pick the side that covers the *sheet* spread; earn the points if it covers.
 
-weekly score = points on covered picks + half points on pushes - penalties + manual adjustment (late penalties, etc.)
+weekly score = points on covered picks + half points on pushes + manual adjustment.
+There are no automatic penalties; the commissioner enters any penalty as an adjustment.
 """
 from collections import defaultdict
 
@@ -10,16 +11,6 @@ LOY = 50
 def push_points(pts: int) -> int | float:
     """A push earns half the points (2.5 for a 5)."""
     return pts // 2 if pts % 2 == 0 else pts / 2
-
-
-def _penalties(picked: list[dict], skipped: int) -> dict:
-    total = sum(g["points"] for g in picked)
-    over = max(0, total - 100)
-    return {
-        "over100": -(-over // 10) * 20 if over else 0,  # ceil(over/10)*20
-        "fourDoubleDigits": 20 if sum(1 for g in picked if g["points"] >= 10) == 4 else 0,
-        "missingGames": 20 * skipped,
-    }
 
 
 def _result(g: dict, results: dict) -> dict | None:
@@ -44,7 +35,7 @@ def score_week(week: dict, results: dict) -> dict:
     picked, per_game, skipped, open_ = [], [], 0, 0
     for g in week["games"]:
         if not g.get("pick"):
-            # no pick: a skip (−20) once the game kicks off, until then still open
+            # no pick: a skip once the game kicks off, until then still open
             res = results.get(str(g.get("eventId") or ""))
             if res and res["state"] in ("in", "post"):
                 skipped += 1
@@ -75,7 +66,7 @@ def score_week(week: dict, results: dict) -> dict:
         picked.append({**g, "points": pts, **entry})
         per_game.append(entry)
 
-    pen = _penalties(picked, skipped)
+    pen = {}  # no automatic penalties
     earned = sum(g["earned"] for g in picked)
     count = lambda o: sum(1 for g in picked if g["outcome"] == o)
     adjustment = int(week.get("adjustment") or 0)

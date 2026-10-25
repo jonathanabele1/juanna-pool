@@ -50,19 +50,19 @@ class Scoring(unittest.TestCase):
         gs.append(game("1", "BUF", 6.5, "fav", 30))  # total 110 -> over by 10
         gs.append(game("1", "BUF", 6.5, None, 2))   # no pick on a finished game -> skipped
         s = score_week({"week": 1, "adjustment": -10, "games": gs}, RES)
-        self.assertEqual(s["penalties"], {"over100": 20, "fourDoubleDigits": 0, "missingGames": 20})  # 5 double digits
-        self.assertEqual(s["score"], 110 - 40 - 10)
+        self.assertEqual(s["penalties"], {})  # no automatic penalties
+        self.assertEqual(s["score"], 110 - 10)
 
-    def test_no_pick_only_penalized_after_kickoff(self):
+    def test_no_pick_skipped_after_kickoff(self):
         w = {"week": 1, "adjustment": 0, "games": [
             game("1", "BUF", 6.5, "fav", 10),   # picked, final win
-            game("2", "GB", 3, None, 2),        # no pick, game over -> skipped (-20)
-            game("3", "X", 3, None, 2),         # no pick, not started -> open, no penalty yet
+            game("2", "GB", 3, None, 2),        # no pick, game over -> skipped (no penalty)
+            game("3", "X", 3, None, 2),         # no pick, not started -> open
         ]}
         s = score_week(w, RES)
         self.assertEqual([g["outcome"] for g in s["games"]], ["win", "skipped", "open"])
-        self.assertEqual(s["penalties"]["missingGames"], 20)
-        self.assertEqual((s["score"], s["open"], s["wagered"]), (10 - 20, 1, 10))
+        self.assertEqual(s["penaltyTotal"], 0)
+        self.assertEqual((s["score"], s["open"], s["wagered"]), (10, 1, 10))
         self.assertFalse(s["complete"])
 
     def test_legacy_status(self):
@@ -71,10 +71,10 @@ class Scoring(unittest.TestCase):
         self.assertEqual(_mine({"status": "sent", "pick": "dog", "points": 5}), {"pick": "dog", "points": 5})
         self.assertEqual(_mine(None), {})
 
-    def test_four_double_digit_penalty(self):
+    def test_four_double_digits_no_penalty(self):
         gs = [game("1", "BUF", 6.5, "fav", 10) for _ in range(4)] + [game("1", "BUF", 6.5, "fav", 2)] * 5
         s = score_week({"week": 1, "adjustment": 0, "games": gs}, RES)
-        self.assertEqual(s["penalties"]["fourDoubleDigits"], 20)
+        self.assertEqual(s["penaltyTotal"], 0)
 
     def test_stats(self):
         w = {"week": 1, "adjustment": 0, "games": [game("1", "BUF", 6.5, "fav", 10), game("2", "GB", 3, "fav", 50, favHome=False)]}
