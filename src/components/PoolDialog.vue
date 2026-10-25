@@ -186,9 +186,9 @@ li.me { background: #eff6ff; }
 .pt i { font-style: normal; font-size: .72rem; }
 .pt.win { background: #dcfce7; color: #166534; }
 .pt.loss { background: #fee2e2; color: #991b1b; }
-.pt.push { background: #e2e8f0; color: #334155; }
+.pt.push { background: #fef3c7; color: #92400e; }
 .pt.live-win { background: #f0fdf4; color: #15803d; box-shadow: inset 0 0 0 1px #86efac; }
-.pt.live-loss { background: #fefce8; color: #a16207; box-shadow: inset 0 0 0 1px #fde047; }
+.pt.live-loss { background: #fff5f5; color: #dc2626; box-shadow: inset 0 0 0 1px #fca5a5; }
 .legend { display: flex; gap: 14px; margin: 12px 0 0; padding-left: 13px; font-size: .72rem; color: #94a3b8; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend .pt { min-width: 0; width: 18px; height: 10px; padding: 0; }

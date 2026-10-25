@@ -121,7 +121,8 @@ h2 small { text-transform: none; letter-spacing: 0; font-weight: 600; margin-lef
 .wh-strip .seg.win, .wh-strip .seg.loss { color: #fff; }
 .wh-strip .seg.push { color: #422006; }
 .wh-strip .seg.live-win { color: #14532d; }
-.wh-strip .seg.live-loss, .wh-strip .seg.live-push { color: #713f12; }
+.wh-strip .seg.live-loss { color: #7f1d1d; }
+.wh-strip .seg.live-push { color: #713f12; }
 .wh-strip .seg.loy { box-shadow: inset 0 0 0 2px #eab308; }
 .wh-strip .seg.sel { transform: translateY(-2px); box-shadow: 0 0 0 2px #fff, 0 0 0 4px #0f172a; }
 .wh-strip .seg:focus-visible { outline: 2px solid #93c5fd; outline-offset: 1px; }
@@ -146,7 +147,7 @@ h2 small { text-transform: none; letter-spacing: 0; font-weight: 600; margin-lef
 .gp-foot { display: flex; justify-content: space-between; gap: 8px; padding-top: 7px; border-top: 1px solid #ffffff1a; font-size: .72rem; font-weight: 600; color: #94a3b8; }
 .gp-pick { color: #e2e8f0; white-space: nowrap; }
 .gpop.win .gp-pick { color: #4ade80; } .gpop.loss .gp-pick { color: #f87171; } .gpop.push .gp-pick { color: #fbbf24; }
-.gpop.live-win .gp-pick { color: #86efac; } .gpop[class*='live-loss'] .gp-pick, .gpop.live-push .gp-pick { color: #fde047; }
+.gpop.live-win .gp-pick { color: #86efac; } .gpop[class*='live-loss'] .gp-pick { color: #fca5a5; } .gpop.live-push .gp-pick { color: #fde047; }
 @keyframes flash { 0%, 60% { box-shadow: 0 0 0 3px #2563eb; } }
 .flash { animation: flash 1.6s ease-out; border-radius: 18px; }
 
@@ -172,7 +173,7 @@ h2 small { text-transform: none; letter-spacing: 0; font-weight: 600; margin-lef
 .seg.push, .dot.push { background: #f59e0b; }
 .seg.pending, .dot.pending { background: #e2e8f0; }
 .seg.live-win, .dot.live-win { background: #86efac; }
-.seg.live-loss, .dot.live-loss { background: #fde047; }
+.seg.live-loss, .dot.live-loss { background: #fca5a5; }
 .seg.live-push, .dot.live-push { background: #fde047; }
 .wh-strip .seg[class*='live-'] { animation: livebar 2s ease-in-out infinite; }
 @keyframes livebar { 50% { opacity: .55; } }

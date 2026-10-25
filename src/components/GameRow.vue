@@ -301,7 +301,8 @@ const poolStatus = computed(() => (final.value ? finalText.value : live.value ? 
 /* live: red ring; final: a left edge in the result's color */
 .game.live { box-shadow: 0 0 0 2px #fca5a5, 0 4px 14px #dc26261a; }
 .game.live.live-win { box-shadow: 0 0 0 2px #86efac, 0 4px 14px #16a34a1a; }
-.game.live.live-loss { box-shadow: 0 0 0 2px #fcd34d, 0 4px 14px #d977061a; }
+.game.live.live-loss { box-shadow: 0 0 0 2px #fca5a5, 0 4px 14px #dc26261a; }
+.game.live.live-push { box-shadow: 0 0 0 2px #fde047, 0 4px 14px #ca8a041a; }
 .game.final { box-shadow: inset 5px 0 0 #94a3b8, 0 1px 2px #0000000d; }
 .game.final.is-win { box-shadow: inset 5px 0 0 #22c55e, 0 1px 2px #0000000d; }
 .game.final.is-loss { box-shadow: inset 5px 0 0 #ef4444, 0 1px 2px #0000000d; }
@@ -318,12 +319,12 @@ const poolStatus = computed(() => (final.value ? finalText.value : live.value ? 
 .r-of { font-size: .72rem; font-weight: 700; opacity: .75; font-variant-numeric: tabular-nums; }
 .result.win { background: #16a34a; color: #fff; box-shadow: 0 2px 8px #16a34a40; }
 .result.loss { background: #fef2f2; color: #b91c1c; box-shadow: inset 0 0 0 1.5px #fecaca; }
-.result.push { background: #f1f5f9; color: #334155; box-shadow: inset 0 0 0 1.5px #e2e8f0; }
+.result.push { background: #fef3c7; color: #92400e; box-shadow: inset 0 0 0 1.5px #fcd34d; }
 /* live: same shape, lighter, since it can still change */
 .result.live { animation: none; }
 .result.live.win { background: #dcfce7; color: #166534; box-shadow: inset 0 0 0 1.5px #86efac; }
-.result.live.loss { background: #fef3c7; color: #92400e; box-shadow: inset 0 0 0 1.5px #fcd34d; }
-.result.live.push { background: #f1f5f9; color: #334155; box-shadow: inset 0 0 0 1.5px #e2e8f0; }
+.result.live.loss { background: #fff5f5; color: #dc2626; box-shadow: inset 0 0 0 1.5px #fca5a5; }
+.result.live.push { background: #fefce8; color: #a16207; box-shadow: inset 0 0 0 1.5px #fde047; }
 @keyframes res-in { from { transform: scale(.85); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .result { animation: none; } }
 .pill.started { background: #fee2e2; color: #991b1b; }

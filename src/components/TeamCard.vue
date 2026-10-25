@@ -43,8 +43,8 @@ function onClick(e) {
 function onDbl() { if (props.peekable) emit('peek', { undo: true }) }
 
 const broken = ref(false)
-const OUTCOME_COLOR = { win: '#16a34a', loss: '#dc2626', push: '#64748b' }
-const LIVE_COLOR = { win: '#4ade80', loss: '#eab308', push: '#94a3b8' }
+const OUTCOME_COLOR = { win: '#16a34a', loss: '#dc2626', push: '#d97706' }
+const LIVE_COLOR = { win: '#4ade80', loss: '#f87171', push: '#facc15' }  // lighter shades of the final colors
 const accent = computed(() => OUTCOME_COLOR[props.outcome] || LIVE_COLOR[props.live] || (props.team?.color ? `#${props.team.color}` : '#16a34a'))
 
 const pickem = computed(() => !props.spread)

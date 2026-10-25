@@ -167,7 +167,8 @@ const poolTop = computed(() => {
 .tile.nopick.ro { opacity: .6; }
 .tile.live { box-shadow: 0 0 0 2px #fca5a5; }
 .tile.live.live-win { box-shadow: 0 0 0 2px #86efac; }
-.tile.live.live-loss { box-shadow: 0 0 0 2px #fcd34d; }
+.tile.live.live-loss { box-shadow: 0 0 0 2px #fca5a5; }
+.tile.live.live-push { box-shadow: 0 0 0 2px #fde047; }
 .tile.final { box-shadow: inset 4px 0 0 #cbd5e1, 0 1px 2px #0000000d; padding-left: 14px; }
 .tile.final.is-win { box-shadow: inset 4px 0 0 #22c55e, 0 1px 2px #0000000d; }
 .tile.final.is-loss { box-shadow: inset 4px 0 0 #ef4444, 0 1px 2px #0000000d; }
@@ -189,7 +190,8 @@ const poolTop = computed(() => {
 .t-team.picked { background: #eff6ff; box-shadow: inset 3px 0 0 #2563eb; }
 .is-win .t-team.picked, .live-win .t-team.picked { background: #f0fdf4; box-shadow: inset 3px 0 0 #22c55e; }
 .is-loss .t-team.picked { background: #fef2f2; box-shadow: inset 3px 0 0 #ef4444; }
-.live-loss .t-team.picked { background: #fefce8; box-shadow: inset 3px 0 0 #eab308; }
+.live-loss .t-team.picked { background: #fff5f5; box-shadow: inset 3px 0 0 #f87171; }
+.live-push .t-team.picked { background: #fefce8; box-shadow: inset 3px 0 0 #eab308; }
 .t-team.other { opacity: .55; }
 .t-logo { width: 24px; height: 24px; object-fit: contain; flex: none; }
 .t-logo.fallback { display: grid; place-items: center; border-radius: 50%; background: #e2e8f0; color: #475569; font-size: .6rem; font-weight: 800; }
@@ -208,7 +210,7 @@ const poolTop = computed(() => {
 .spacer { flex: 1; }
 .t-hint { font-size: .72rem; color: #94a3b8; }
 .t-status { font-size: .72rem; font-weight: 700; color: #475569; }
-.t-status.win { color: #15803d; } .t-status.loss { color: #b91c1c; } .live-loss .t-status { color: #a16207; }
+.t-status.win { color: #15803d; } .t-status.loss { color: #b91c1c; } .live-loss .t-status { color: #dc2626; } .live-push .t-status, .t-status.push { color: #a16207; }
 .t-pts { font-weight: 800; font-size: .82rem; padding: 2px 9px; border-radius: 999px; background: #f1f5f9; font-variant-numeric: tabular-nums; }
 .t-pts.loy { background: #fef08a; color: #422006; }
 .t-step { display: flex; align-items: center; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
