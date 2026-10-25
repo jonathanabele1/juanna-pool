@@ -8,6 +8,9 @@
 - Re-uploading an image replaces the matchups but keeps your pick/points for any matchup that still exists.
 - "Clear my picks" removes your saved picks for that week (not allowed once any of its deadlines have passed).
 - A week with saved picks opens read-only (with an "Edit picks" button); Cancel discards changes and goes back to that view.
+- The week card shows score, record and max first, then a strip with one pill per game (colored by result). Tap a pill
+  for a small popover with that game's score and status; tap the popover to jump to the game. Send picks and Edit picks
+  sit under the results.
 
 ## Picking
 - Every game starts with no pick. Tap a team to pick it; tap it again to clear the pick. Points can only be
@@ -41,8 +44,10 @@ Total, weekly average, record vs spread, best/worst week, points earned vs wager
 favorite/underdog and home/away tendencies, Lock of the Year result, biggest hit/miss, running total.
 
 ## The rest of the pool
-- **League** tab (third, after Season stats). *Week*: every player's score for the week. While games are live it's ranked by the score
-  if every game ended now (with ▲/▼ for places gained or lost vs. the final games only) and refreshes every 30s.
+- **League** tab (third, after Season stats). *Week*: every player's score for the week, with a column each for Score, Live
+  (if every game on now ended as it stands), Max and Live max (columns show only when they apply). Tap a header to sort
+  by it, tap again to flip. While games are live it sorts by Live by default (with ▲/▼ for places gained or lost vs.
+  the final games only) and refreshes every 30s.
   *Season*: total, average, record, and weeks won (finished weeks only). Tap a player to open their page.
 - A player's page shows their picks week by week (read-only) and their season stats. **Another player's pick on a
   game stays hidden until that game kicks off**: the server never sends it, admins included.

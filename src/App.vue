@@ -94,11 +94,7 @@ watch(asAdmin, on => { if (!on && user.value && tab.value === 'admin') tab.value
           <p class="sub">2026 season</p>
         </div>
         <div class="topright">
-          <button v-if="user.isAdmin" :class="['modeswitch', { on: adminMode }]" role="switch" :aria-checked="adminMode"
-                  :title="adminMode ? 'Turn off to see the site as a regular player' : 'Turn on admin tools'" @click="adminMode = !adminMode">
-            <span class="knob"></span>Admin mode
-          </button>
-          <AccountMenu :user="user" :admin-mode="asAdmin" :demo-live="demoLive" @logout="onLoggedOut" @demo="toggleDemo" />
+          <AccountMenu :user="user" :admin-mode="asAdmin" :demo-live="demoLive" @logout="onLoggedOut" @demo="toggleDemo" @admin="adminMode = $event" />
         </div>
       </header>
       <div class="tabs" role="tablist">

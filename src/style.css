@@ -60,12 +60,6 @@ h2 small { text-transform: none; letter-spacing: 0; font-weight: 600; margin-lef
 
 .tabs { display: inline-flex; flex-wrap: wrap; background: #e2e8f0; border-radius: 12px; padding: 3px; margin-bottom: 12px; }
 .topright { display: flex; align-items: center; gap: 8px; }
-.modeswitch { display: inline-flex; align-items: center; gap: 8px; border: 1px solid #e2e8f0; background: #fff; color: #64748b; border-radius: 999px; padding: 6px 12px 6px 6px; font-weight: 600; font-size: .8rem; cursor: pointer; }
-.modeswitch .knob { width: 30px; height: 18px; border-radius: 999px; background: #cbd5e1; position: relative; transition: background .15s; }
-.modeswitch .knob::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px #0003; transition: transform .15s; }
-.modeswitch.on { color: #0f172a; border-color: #0f172a; }
-.modeswitch.on .knob { background: #0f172a; }
-.modeswitch.on .knob::after { transform: translateX(12px); }
 .announce { margin: 0 0 10px; padding: 10px 14px; border-radius: 14px; background: #fef9c3; color: #713f12; font-size: .9rem; white-space: pre-line; }
 .tabs button { border: 0; background: none; padding: 7px 14px; border-radius: 9px; font-weight: 700; color: #475569; cursor: pointer; }
 .tabs button.on { background: #fff; color: #0f172a; box-shadow: 0 1px 3px #0002; }
@@ -77,14 +71,13 @@ h2 small { text-transform: none; letter-spacing: 0; font-weight: 600; margin-lef
 .loading { color: #64748b; text-align: center; padding: 40px 10px; }
 .neg { color: #b91c1c; }
 
-.weekhead { background: #fff; border-radius: 20px; box-shadow: 0 1px 2px #0000000d, 0 4px 16px #0f172a0a; overflow: hidden; }
+.weekhead { background: #fff; border-radius: 20px; box-shadow: 0 1px 2px #0000000d, 0 4px 16px #0f172a0a; }
+.weekhead > :last-child { border-radius: 0 0 20px 20px; }  /* no overflow: hidden, so the pill popover isn't clipped */
 .wh-top { display: flex; align-items: center; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap; padding: 16px 18px; }
 .wh-id { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 220px; }
 .wh-title { display: flex; align-items: center; gap: 2px; }
 .wh-title h2 { margin: 0; font-size: 1.35rem; font-weight: 800; text-transform: none; letter-spacing: -.02em; color: #0f172a; }
 .wh-sub { margin: 0; font-size: .82rem; color: #64748b; }
-.wh-to { margin: 0; font-size: .82rem; overflow-wrap: anywhere; }
-.wh-to.missing { color: #a16207; }
 .wh-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .wh-actions a.btn { text-decoration: none; }
 
@@ -97,9 +90,10 @@ h2 small { text-transform: none; letter-spacing: 0; font-weight: 600; margin-lef
 .stat.score.pos dd { color: #15803d; }
 .stat.score.neg dd, .stat dd.neg { color: #b91c1c; }
 
-.wh-strip { display: flex; gap: 3px; }
+.wh-strip { display: flex; gap: 3px; position: relative; }
 .wh-strip .seg {
-  flex: 1; min-width: 0; height: 24px; border-radius: 6px; background: #e2e8f0;
+  flex: 1; min-width: 0; height: 26px; border-radius: 6px; background: #e2e8f0; border: 0; padding: 0; cursor: pointer;
+  transition: transform .12s, box-shadow .12s;
   display: grid; place-items: center; overflow: hidden;
   font-size: .7rem; font-weight: 800; font-variant-numeric: tabular-nums; color: #64748b;
 }
@@ -108,6 +102,50 @@ h2 small { text-transform: none; letter-spacing: 0; font-weight: 600; margin-lef
 .wh-strip .seg.live-win { color: #14532d; }
 .wh-strip .seg.live-loss, .wh-strip .seg.live-push { color: #713f12; }
 .wh-strip .seg.loy { box-shadow: inset 0 0 0 2px #eab308; }
+.wh-strip .seg.sel { transform: translateY(-2px); box-shadow: 0 0 0 2px #fff, 0 0 0 4px #0f172a; }
+.wh-strip .seg:focus-visible { outline: 2px solid #93c5fd; outline-offset: 1px; }
+
+/* the popover for a tapped pill: score + status; tap it to jump to the game */
+.gpop {
+  position: absolute; top: calc(100% + 10px); z-index: 30; width: min(210px, 100%);
+  display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; text-align: left; cursor: pointer;
+  background: #0f172a; color: #fff; border: 0; border-radius: 14px; box-shadow: 0 12px 28px #0f172a40;
+  font: inherit; animation: gpop .14s ease-out;
+}
+.gpop::before { content: ''; position: absolute; top: -5px; left: calc(var(--arrow) - 5px); width: 10px; height: 10px; background: inherit; transform: rotate(45deg); border-radius: 2px; }
+.gpop:active { transform: scale(.98); }
+@keyframes gpop { from { opacity: 0; transform: translateY(-4px); } }
+.gp-teams { display: flex; flex-direction: column; gap: 4px; }
+.gp-team { display: flex; align-items: center; gap: 8px; font-size: .92rem; color: #cbd5e1; }
+.gp-team img { width: 20px; height: 20px; object-fit: contain; }
+.gp-team b { font-weight: 700; }
+.gp-team.mine b { color: #fff; }
+.gp-team.mine b::after { content: '•'; margin-left: 5px; color: #60a5fa; }
+.gp-sc { margin-left: auto; font-weight: 800; font-size: 1.05rem; color: #fff; font-variant-numeric: tabular-nums; }
+.gp-foot { display: flex; justify-content: space-between; gap: 8px; padding-top: 7px; border-top: 1px solid #ffffff1a; font-size: .72rem; font-weight: 600; color: #94a3b8; }
+.gp-pick { color: #e2e8f0; white-space: nowrap; }
+.gpop.win .gp-pick { color: #4ade80; } .gpop.loss .gp-pick { color: #f87171; } .gpop.push .gp-pick { color: #fbbf24; }
+.gpop.live-win .gp-pick { color: #86efac; } .gpop[class*='live-loss'] .gp-pick, .gpop.live-push .gp-pick { color: #fde047; }
+@keyframes flash { 0%, 60% { box-shadow: 0 0 0 3px #2563eb; } }
+.flash { animation: flash 1.6s ease-out; border-radius: 18px; }
+
+/* Send / Edit: one pair under the results */
+.wh-foot { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 18px 16px; background: #fbfcfe; }
+.wh-results + .wh-foot { padding-top: 0; }
+/* one joined control, both halves equal weight; only the icons carry color */
+.acts { flex: 1 1 100%; display: flex; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden; box-shadow: 0 1px 2px #0f172a0a; }
+.act {
+  flex: 1 1 0; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px; padding: 0 14px;
+  border: 0; background: none; color: #0f172a; font: inherit; font-weight: 700; font-size: .92rem; cursor: pointer; transition: background .12s;
+}
+.act + .act { border-left: 1px solid #e2e8f0; }
+.act:hover { background: #f8fafc; }
+.act:active { background: #f1f5f9; }
+.act:focus-visible { outline: 2px solid #93c5fd; outline-offset: -2px; }
+.act svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.act.send svg { color: #2563eb; }
+.act.edit svg { color: #64748b; }
+.wh-note { flex-basis: 100%; margin: 0; font-size: .8rem; color: #a16207; }
 .seg.win, .dot.win { background: #22c55e; }
 .seg.loss, .dot.loss { background: #ef4444; }
 .seg.push, .dot.push { background: #f59e0b; }
@@ -137,7 +175,8 @@ h2 small { text-transform: none; letter-spacing: 0; font-weight: 600; margin-lef
   .stat dd { font-size: 1.2rem; }
   .wh-adj { margin-left: 0; }
   .wh-strip { gap: 2px; }
-  .wh-strip .seg { height: 22px; font-size: .62rem; border-radius: 5px; }
+  .wh-strip .seg { height: 28px; font-size: .62rem; border-radius: 5px; }
+  .wh-foot { padding: 12px 14px 14px; }
 }
 
 .btn.danger { color: #b91c1c; }

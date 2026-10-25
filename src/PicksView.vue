@@ -448,6 +448,57 @@ const segClass = x => (x.skip ? (x.outcome === 'skipped' ? 'skipped' : 'open') :
 const segText = x => (x.skip ? `${x.g.fav} / ${x.g.dog}: ${OUTCOME_TEXT[x.outcome] || 'no pick'}`
   : `${pickName(x.g)} ${x.pts}: ${x.live ? LIVE_TEXT[x.live] : OUTCOME_TEXT[x.outcome]}`)
 
+// ---- tap a pill in the strip: a small score popover; tap the popover to jump to that game ----
+const pop = ref(null)          // { i, left, arrow } (px, inside the strip)
+const stripEl = ref(null)
+const popEl = ref(null)
+const POP_W = 210
+function togglePop(i, seg) {
+  if (pop.value?.i === i) { pop.value = null; return }
+  const strip = stripEl.value.getBoundingClientRect(), b = seg.getBoundingClientRect()
+  const center = b.left + b.width / 2 - strip.left
+  const w = Math.min(POP_W, strip.width)
+  const left = Math.max(0, Math.min(strip.width - w, center - w / 2))
+  pop.value = { i, left, arrow: center - left }
+}
+// any other tap closes it (taps on a pill are handled by the pill itself)
+const onDocTap = e => { if (pop.value && !e.target.closest?.('.wh-strip .seg, .gpop')) pop.value = null }
+onMounted(() => document.addEventListener('pointerdown', onDocTap))
+onUnmounted(() => document.removeEventListener('pointerdown', onDocTap))
+const popInfo = computed(() => {
+  const x = pop.value && rowInfo.value[pop.value.i]
+  if (!x) return null
+  const r = resolveGame(x.g, events.value), ev = r.event, res = resultFor(x.i)
+  const scoreOf = key => {
+    if (!ev || ev.state === 'pre') return null
+    const team = key === 'fav' ? r.favTeam : r.dogTeam
+    return ev.scores?.[team === ev.home ? 'home' : 'away'] ?? res?.[`${key}Score`] ?? null
+  }
+  const side = key => {
+    const t = key === 'fav' ? r.favTeam : r.dogTeam
+    return { abbr: t?.abbr || (x.g[key] || '').toUpperCase(), logo: t?.logo, score: scoreOf(key), mine: x.g.pick === key }
+  }
+  const teams = r.favHome ? [side('dog'), side('fav')] : [side('fav'), side('dog')]   // away first
+  const l = ev?.live
+  const when = !ev ? `${x.g.day || ''} ${x.g.time || ''}`.trim()
+    : ev.state === 'post' ? (/OT/.test(ev.detail || '') ? 'Final · OT' : 'Final')
+    : ev.state === 'in' ? (l?.halftime ? 'Halftime' : [l?.quarter, l?.clock].filter(Boolean).join(' · ') || 'Live')
+    : new Date(ev.kickoff).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })
+  const line = x.g.hasLine === false ? '' : !x.g.spread ? ' PK' : x.g.pick === 'fav' ? ` −${x.g.spread}` : ` +${x.g.spread}`
+  const pick = x.skip ? 'No pick' : `${side(x.g.pick).abbr}${line} · ${x.pts} pts`
+  return { teams, when, pick, cls: segClass(x), label: segText(x) }
+})
+async function goToGame(i) {
+  pop.value = null
+  if (!visible.value.some(x => x.i === i)) clearFilters()
+  await nextTick()
+  const el = document.querySelector(`[data-game="${i}"]`)
+  if (!el) return
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash')
+  setTimeout(() => el.classList.remove('flash'), 1600)
+}
+
 function startEdit() { editMode.value = true }
 // Switching modes adds/removes things above the games; keep this card where it was on screen
 async function keepInPlace(card, fn) {
@@ -522,21 +573,12 @@ const adjText = computed(() => [
             <template v-else-if="scheduled">DraftKings lines for now. The official sheet isn’t posted yet.</template>
             <template v-else>Make your picks, then save.</template>
           </p>
-          <p v-if="!editMode && outGames.length && !leagueEmail" class="wh-to missing">
-            No league address for week {{ week }} yet, so the email won’t have a recipient.<template v-if="isAdmin"> Add it in Admin → League email addresses.</template>
-          </p>
-          <p v-if="mailNote" class="wh-to missing">{{ mailNote }}</p>
         </div>
-        <div class="wh-actions">
+        <div v-if="isAdmin" class="wh-actions">
           <template v-if="isAdmin">
             <a v-if="imageUrl" :href="imageUrl" target="_blank" rel="noopener" class="btn ghost sm" title="Open the uploaded sheet">🖼 Sheet</a>
             <button v-if="editMode || !games.length" :class="['btn', games.length ? 'ghost sm' : 'primary']" @click="uploadOpen = true">📷 {{ imageUrl ? 'Replace sheet' : 'Upload sheet' }}</button>
             <button v-if="!games.length && events.length" class="btn ghost" @click="scaffold" title="Use the NFL schedule with DraftKings lines until the sheet is out">Use DraftKings lines</button>
-          </template>
-          <template v-if="games.length">
-            <button v-if="!editMode && outGames.length" class="btn primary" @click="sendPicks">✉ Send picks</button>
-            <button v-if="!editMode" :class="['btn', outGames.length ? 'ghost' : 'primary']" @click="startEdit">✎ Edit picks</button>
-            <button v-else-if="hasSaved" class="btn ghost" @click="cancelEdit">Cancel</button>
           </template>
         </div>
       </div>
@@ -567,8 +609,21 @@ const adjText = computed(() => [
           </div>
         </dl>
 
-        <div class="wh-strip" role="img" :aria-label="`${tally.win} covered, ${tally.loss} missed, ${tally.liveWin + tally.liveLoss} live, ${tally.pending} still to play`">
-          <span v-for="x in rowInfo" :key="x.i" :class="['seg', segClass(x), { loy: x.pts === 50 }]" :title="segText(x)">{{ x.skip ? '' : x.pts }}</span>
+        <div ref="stripEl" class="wh-strip" :aria-label="`${tally.win} covered, ${tally.loss} missed, ${tally.liveWin + tally.liveLoss} live, ${tally.pending} still to play`">
+          <button v-for="x in rowInfo" :key="x.i" type="button" :class="['seg', segClass(x), { loy: x.pts === 50, sel: pop?.i === x.i }]"
+                  :aria-label="segText(x)" :aria-expanded="pop?.i === x.i" @click="togglePop(x.i, $event.currentTarget)">{{ x.skip ? '' : x.pts }}</button>
+          <button v-if="popInfo" ref="popEl" type="button" :class="['gpop', popInfo.cls]" :style="{ left: pop.left + 'px', '--arrow': pop.arrow + 'px' }"
+                  :aria-label="`${popInfo.label}. Go to this game.`" @click="goToGame(pop.i)">
+            <span class="gp-teams">
+              <span v-for="t in popInfo.teams" :key="t.abbr" :class="['gp-team', { mine: t.mine }]">
+                <img v-if="t.logo" :src="t.logo" alt="" /><b>{{ t.abbr }}</b><span v-if="t.score != null" class="gp-sc">{{ t.score }}</span>
+              </span>
+            </span>
+            <span class="gp-foot">
+              <span class="gp-when">{{ popInfo.when }}</span>
+              <span v-if="popInfo.pick" class="gp-pick">{{ popInfo.pick }}</span>
+            </span>
+          </button>
         </div>
         <p v-if="!hasResults" class="wh-legend">
           <span><i class="dot pending"></i>{{ picked.length }} picked</span>
@@ -586,6 +641,21 @@ const adjText = computed(() => [
             {{ adjText }}
           </span>
         </p>
+      </div>
+
+      <div v-if="games.length && (!editMode || hasSaved)" class="wh-foot">
+        <div class="acts">
+          <template v-if="!editMode">
+            <button v-if="outGames.length" class="act send" @click="sendPicks">
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5.5h14v9H3z M3.5 6l6.5 5 6.5-5" /></svg>Send picks
+            </button>
+            <button class="act edit" @click="startEdit">
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M13.5 3.5l3 3L8 15H5v-3z" /></svg>Edit picks
+            </button>
+          </template>
+          <button v-else class="act" @click="cancelEdit">Cancel</button>
+        </div>
+        <p v-if="mailNote" class="wh-note">{{ mailNote }}</p>
       </div>
     </section>
 
@@ -678,6 +748,7 @@ const adjText = computed(() => [
         <GameTile
           v-for="x in visible"
           :key="x.i"
+          :data-game="x.i"
           :game="x.g"
           :events="events"
           :now="nowLines[x.i]"
@@ -693,6 +764,7 @@ const adjText = computed(() => [
         <GameRow
           v-for="x in visible"
           :key="x.i"
+          :data-game="x.i"
           :game="x.g"
           :events="events"
           :now="nowLines[x.i]"
@@ -712,6 +784,7 @@ const adjText = computed(() => [
         <GameRow
           v-for="x in grp.items"
           :key="x.i"
+          :data-game="x.i"
           :game="x.g"
           :events="events"
           :now="nowLines[x.i]"
