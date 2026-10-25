@@ -3,6 +3,7 @@
 import { computed, ref } from 'vue'
 import { coverNow, resolveGame } from '../lines.js'
 import { pct } from '../pool.js'
+import { clampPoints, stepPoints, MIN_PTS, MAX_PTS } from '../points.js'
 import PoolDialog from './PoolDialog.vue'
 
 const props = defineProps({
@@ -73,7 +74,7 @@ const statusText = computed(() => {
 })
 
 function choose(key) { if (!props.readonly) g.value.pick = g.value.pick === key ? null : key }
-function bump(d) { g.value.points = Math.min(50, Math.max(0, (Number(g.value.points) || 0) + d)) }
+function bump(d) { g.value.points = stepPoints(g.value.points, d) }
 const isLoy = computed(() => Number(g.value.points) === 50)
 const broken = ref({})
 
@@ -139,9 +140,9 @@ const poolTop = computed(() => {
       <span class="spacer"></span>
       <template v-if="g.pick">
         <div v-if="!readonly" class="t-step">
-          <button aria-label="Decrease points" @click="bump(-1)">−</button>
-          <input type="number" inputmode="numeric" min="2" max="50" v-model.number="g.points" @focus="$event.target.select()" aria-label="Points" />
-          <button aria-label="Increase points" @click="bump(1)">+</button>
+          <button aria-label="Decrease points" :disabled="g.points <= MIN_PTS" @click="bump(-1)">−</button>
+          <input type="number" inputmode="numeric" min="2" :max="MAX_PTS" v-model.number="g.points" @focus="$event.target.select()" @change="g.points = clampPoints(g.points)" aria-label="Points" />
+          <button aria-label="Increase points" :disabled="g.points >= MAX_PTS" @click="bump(1)">+</button>
         </div>
         <span v-else :class="['t-pts', { loy: isLoy }]"><template v-if="isLoy">★ </template>{{ g.points }}</span>
       </template>
@@ -212,7 +213,8 @@ const poolTop = computed(() => {
 .t-pts.loy { background: #fef08a; color: #422006; }
 .t-step { display: flex; align-items: center; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
 .t-step button { width: 24px; height: 26px; border: 0; background: #f8fafc; cursor: pointer; color: #0f172a; font-size: .95rem; line-height: 1; }
-.t-step button:hover { background: #e2e8f0; }
+.t-step button:hover:not(:disabled) { background: #e2e8f0; }
+.t-step button:disabled { color: #cbd5e1; cursor: default; }
 .t-step input { width: 32px; height: 26px; border: 0; text-align: center; font-weight: 800; font-size: .85rem; -moz-appearance: textfield; }
 .t-step input::-webkit-outer-spin-button, .t-step input::-webkit-inner-spin-button { appearance: none; margin: 0; }
 .t-step input:focus { outline: 2px solid #93c5fd; outline-offset: -2px; }

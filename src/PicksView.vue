@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { parseSpreads, parseWeek } from './parse.js'
-import { currentLine, resolveGame } from './lines.js'
+import { currentLine, resolveGame, coverNow } from './lines.js'
 import { getLines, getWeek, saveWeek, deleteWeek, uploadImage, getTeamCovers, getPool, getSplits } from './api.js'
 import { MAIL_APPS, openMail, platform } from './mail.js'
 import { mailPrefs, loadMailPrefs } from './mailPrefs.js'
@@ -66,7 +66,28 @@ async function refreshLines() {
 
 const nowLines = computed(() => games.value.map(g => currentLine(g, events.value)))
 const hasStarted = g => { const ev = resolveGame(g, events.value).event; return !!ev && ev.state !== 'pre' }
-const resultFor = i => scored.value?.games?.[i]
+// The server scored your *saved* picks. While you change a pick (or its points), show the result for the new one.
+const resultFor = i => {
+  const res = scored.value?.games?.[i]
+  const g = games.value[i], was = serverCopy.value?.games?.[i]
+  if (!g || (was && was.fav === g.fav && was.dog === g.dog && was.pick === g.pick && Number(was.points) === Number(g.points))) return res
+  return draftResult(g, res, was?.fav === g.fav ? was?.pick : null)
+}
+function draftResult(g, res, savedPick) {
+  if (!g.pick) return { outcome: hasStarted(g) ? 'skipped' : 'open' }
+  const pts = Number(g.points) || 0
+  const c = coverNow(g, events.value)
+  const state = c?.state ?? res?.state ?? null
+  const margin = c ? c.margin                                            // your side, from the scoreboard
+    : res?.margin != null ? (g.pick === 'fav' ? res.margin : -res.margin)  // the server's is the favorite's side
+    : res?.liveMargin != null && savedPick ? (savedPick === g.pick ? res.liveMargin : -res.liveMargin)
+    : null
+  const out = { state, favScore: res?.favScore ?? null, dogScore: res?.dogScore ?? null, outcome: 'pending', earned: 0 }
+  if (margin == null || !['in', 'post'].includes(state)) return out
+  const status = margin > 0 ? 'win' : margin < 0 ? 'loss' : 'push'
+  if (state === 'in') return { ...out, live: status, liveMargin: margin }
+  return { ...out, outcome: status, earned: status === 'win' ? pts : status === 'push' ? pts / 2 : 0 }
+}
 const liveCount = computed(() => events.value.filter(e => e.state === 'in').length)
 
 // ---- the pool's picks (each game's revealed at kickoff) + DraftKings public betting ----
@@ -79,8 +100,8 @@ async function refreshSplits() {
   if (!events.value.some(e => e.state === 'pre')) return  // public betting only moves before kickoff
   try { splits.value = await getSplits(props.week) } catch { /* DraftKings unavailable: no public row */ }
 }
-// before kickoff the card just says the pool's picks are coming (not while you're picking: less noise)
-const poolFor = g => { const p = pool.value[gameKey(g)]; return p && (p.revealed || !editMode.value) ? p : null }
+// before kickoff the card says the pool's picks are locked until then
+const poolFor = g => pool.value[gameKey(g)] || null
 const splitFor = g => splits.value[g.eventId ?? resolveGame(g, events.value).event?.id] || null
 
 // While games are on, re-check scores every 30s (and right away when you come back to the tab).
@@ -338,8 +359,7 @@ const pct = computed(() => Math.min(100, (total.value / TARGET) * 100))
 const pickName = g => (g.pick === 'fav' ? g.fav : g.dog)
 const warnings = computed(() => {
   const w = []
-  if (total.value > TARGET) w.push(`Over 100 by ${total.value - TARGET}`)
-  if (doubleDigits.value === 4) w.push('Exactly 4 double-digit picks')
+  if (doubleDigits.value === 4) w.push('4 double-digit picks isn’t allowed. Use 3 or 5+.')
   for (const g of picked.value) {
     const p = Number(g.points)
     if (!(Number.isInteger(p) && ((p >= 2 && p <= 20) || p === 50))) w.push(`${pickName(g)}: ${g.points} not allowed (2–20, or 50)`)
@@ -428,9 +448,6 @@ async function save() {
     saving.value = false
   }
 }
-const weekState = computed(() =>
-  dirty.value ? { cls: 'editing', text: 'Unsaved changes' }
-    : hasSaved.value ? { cls: 'sent', text: '✓ Saved' } : { cls: 'new', text: 'No picks yet' })
 const OUTCOME_TEXT = { win: 'covered', loss: 'missed', push: 'push', pending: 'not played yet', skipped: 'no pick', open: 'no pick yet' }
 const LIVE_TEXT = { win: 'live, covering', loss: 'live, not covering', push: 'live, on the number' }
 const tally = computed(() => {
@@ -562,8 +579,6 @@ const adjText = computed(() => [
         <div class="wh-id">
           <div class="wh-title">
             <h2>Week {{ week }}</h2>
-            <span v-if="!games.length" class="badge new">Lines not posted yet</span>
-            <span v-else :class="['badge', weekState.cls]">{{ weekState.text }}</span>
           </div>
           <p v-if="status || !games.length || scheduled || !hasSaved" class="wh-sub">
             <template v-if="status">{{ status }}</template>
@@ -705,7 +720,10 @@ const adjText = computed(() => [
       <section class="filterbar">
         <div class="search">
           <span aria-hidden="true">⌕</span>
-          <input v-model="query" type="search" placeholder="Search a team…" aria-label="Search a team" />
+          <input v-model="query" type="search" placeholder="Search a team…" aria-label="Search a team" @keydown.esc="query = ''" />
+          <button v-if="query" type="button" class="search-x" aria-label="Clear search" @click="query = ''; $event.currentTarget.previousElementSibling.focus()">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" /></svg>
+          </button>
         </div>
         <select v-model="sortKey" aria-label="Sort games">
           <option v-for="[v, t] in sortOptions" :key="v" :value="v">{{ t }}</option>
@@ -802,22 +820,25 @@ const adjText = computed(() => [
 
       <!-- sticky total: only while editing -->
       <footer v-if="editMode" :class="['totalbar', state]">
-        <div class="track"><div class="fill" :style="{ width: pct + '%' }"></div></div>
         <div class="tb-row">
-          <span class="big">{{ total }}<small> / {{ TARGET }}</small></span>
-          <span class="msg">
-            <template v-if="state === 'good'">✓ Exactly 100</template>
-            <template v-else-if="diff > 0">{{ diff }} to go</template>
-            <template v-else>{{ -diff }} over</template>
+          <span class="tb-ring" role="img" :aria-label="`${total} of ${TARGET} points`">
+            <svg viewBox="0 0 48 48" aria-hidden="true">
+              <circle class="ring-bg" cx="24" cy="24" r="20" />
+              <circle v-if="total" class="ring-fill" cx="24" cy="24" r="20" pathLength="100" :stroke-dasharray="`${pct} 100`" />
+            </svg>
+            <b aria-hidden="true">{{ total }}</b>
           </span>
-          <span class="dd">{{ picked.length }} of {{ games.length }} picked · {{ doubleDigits }} double-digit</span>
-          <span class="tb-actions">
-          <button v-if="hasSaved" class="btn ghost cancel" :disabled="saving" :title="dirty ? 'Undo your changes and go back to your saved picks' : 'Stop editing'" @click="cancelFromBar">Cancel</button>
-          <button :class="['btn', dirty ? 'primary' : 'ghost']" :disabled="saving || !dirty" @click="save()">{{ saving ? '…' : dirty ? 'Save' : 'Saved ✓' }}</button>
+          <span class="tb-text">
+            <b>{{ state === 'good' ? 'All 100 in' : diff > 0 ? `${diff} left` : `${-diff} over` }}</b>
+            <small>{{ picked.length }}/{{ games.length }} picked</small>
           </span>
+          <button v-if="hasSaved" class="tb-cancel" :disabled="saving" @click="cancelFromBar">Cancel</button>
+          <button class="tb-save" :disabled="saving || !dirty || !!blocker" @click="save()">{{ saving ? 'Saving…' : dirty ? 'Save' : 'Saved' }}</button>
         </div>
-        <ul v-if="warnings.length" class="warnings"><li v-for="w in warnings" :key="w">{{ w }}</li></ul>
-        <p v-if="saveError" class="err">{{ saveError }}</p>
+        <ul v-if="warnings.length || saveError" class="warnings">
+          <li v-for="w in warnings" :key="w">{{ w }}</li>
+          <li v-if="saveError" class="err">{{ saveError }}</li>
+        </ul>
       </footer>
     </template>
 

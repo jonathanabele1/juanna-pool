@@ -4,6 +4,7 @@ import TeamCard from './TeamCard.vue'
 import PoolBar from './PoolBar.vue'
 import PoolDialog from './PoolDialog.vue'
 import { coverNow, resolveGame } from '../lines.js'
+import { clampPoints, stepPoints, MIN_PTS, MAX_PTS } from '../points.js'
 
 const props = defineProps({
   game: Object, events: Array, now: Object, result: Object, ats: Object,
@@ -93,12 +94,11 @@ const pts = computed({
   get: () => g.value.points,
   set: v => (g.value.points = v),
 })
-function bump(d) {
-  const cur = Number(g.value.points) || 0
-  g.value.points = Math.min(50, Math.max(0, cur + d))
-}
+function bump(d) { g.value.points = stepPoints(g.value.points, d) }
 const isLoy = computed(() => Number(g.value.points) === 50)
-function toggleLoy() { g.value.points = isLoy.value ? 2 : 50 }
+function toggleLoy() { g.value.points = isLoy.value ? MIN_PTS : 50 }
+const isMax = computed(() => Number(g.value.points) === MAX_PTS)
+function toggleMax() { g.value.points = isMax.value ? MIN_PTS : MAX_PTS }
 const deltaText = d => (d > 0 ? `▲ +${d}` : `▼ ${d}`)
 
 // ---- the pool + public betting on this game ----
@@ -117,8 +117,7 @@ const poolStatus = computed(() => (final.value ? finalText.value : live.value ? 
       <span v-if="showDay" class="pill day">{{ dayText }}</span>
       <span v-if="final" class="pill final">{{ finalText }}</span>
       <template v-else-if="live">
-        <span class="pill live"><i class="pulse"></i>Live</span>
-        <span v-if="clockText" class="pill clock">{{ clockText }}</span>
+        <span class="pill live" :aria-label="`Live${clockText ? `, ${clockText}` : ''}`"><i class="pulse"></i>{{ clockText || 'Live' }}</span>
       </template>
       <span v-else-if="started" class="pill started">Started</span>
       <span v-else-if="g.pastDue && !g.pick" class="pill pastdue" title="Past the pick deadline. You can still change it.">Past due</span>
@@ -200,20 +199,21 @@ const poolStatus = computed(() => (final.value ? finalText.value : live.value ? 
       @close="poolOpen = false"
     />
 
-    <footer v-if="!readonly" class="foot">
+    <footer v-if="!readonly" :class="['foot', { fixing: editing }]">
       <span class="picked">
-        <template v-if="g.pick">Picking <b>{{ pickedName }}</b></template>
-        <template v-else>Tap a team to pick it</template>
+        <template v-if="g.pick"><span class="pk-word">Picking </span><b>{{ pickedName }}</b></template>
+        <template v-else>Tap a team</template>
         <small v-if="editing">
           · <button class="link" @click="g.favHome = !r.favHome">swap home/away</button>
         </small>
       </span>
       <span class="spacer"></span>
+      <button class="loy max" :class="{ on: isMax }" :disabled="!g.pick" @click="toggleMax" :aria-label="`Set to ${MAX_PTS} points`">{{ MAX_PTS }}</button>
       <button class="loy" :class="{ on: isLoy }" :disabled="!g.pick" @click="toggleLoy" title="Lock of the Year (50 points, once a season)">★ LOY</button>
       <div :class="['stepper', { off: !g.pick }]" :title="g.pick ? '' : 'Pick a team first'">
-        <button aria-label="Decrease points" :disabled="!g.pick" @click="bump(-1)">−</button>
-        <input type="number" inputmode="numeric" min="2" max="50" v-model.number="pts" :disabled="!g.pick" @focus="$event.target.select()" aria-label="Points" />
-        <button aria-label="Increase points" :disabled="!g.pick" @click="bump(1)">+</button>
+        <button aria-label="Decrease points" :disabled="!g.pick || g.points <= MIN_PTS" @click="bump(-1)">−</button>
+        <input type="number" inputmode="numeric" :min="MIN_PTS" :max="MAX_PTS" v-model.number="pts" :disabled="!g.pick" @focus="$event.target.select()" @change="pts = clampPoints(pts)" aria-label="Points" />
+        <button aria-label="Increase points" :disabled="!g.pick || g.points >= MAX_PTS" @click="bump(1)">+</button>
       </div>
     </footer>
 
@@ -244,7 +244,10 @@ const poolStatus = computed(() => (final.value ? finalText.value : live.value ? 
 .stepper.off, .loy:disabled { opacity: .45; }
 .stepper.off button, .loy:disabled { cursor: not-allowed; }
 
-.meta { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.meta { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; min-width: 0; }
+.meta > * { flex: none; }
+.meta > .spacer { flex: 1; }
+.meta > .result { flex: 0 1 auto; min-width: 0; }
 .spacer { flex: 1; }
 
 
@@ -252,8 +255,7 @@ const poolStatus = computed(() => (final.value ? finalText.value : live.value ? 
 .pill b { margin-left: 5px; }
 .pill.day { background: #fff; box-shadow: inset 0 0 0 1px #e2e8f0; }
 .pill.final { background: #0f172a; color: #fff; letter-spacing: .04em; text-transform: uppercase; }
-.pill.live { background: #dc2626; color: #fff; letter-spacing: .06em; text-transform: uppercase; gap: 6px; }
-.pill.clock { background: #fef2f2; color: #991b1b; font-variant-numeric: tabular-nums; }
+.pill.live { background: #dc2626; color: #fff; gap: 6px; font-variant-numeric: tabular-nums; }
 .pulse { width: 7px; height: 7px; border-radius: 50%; background: #fff; animation: pulse 1.4s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.7); } }
 @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
@@ -273,7 +275,7 @@ const poolStatus = computed(() => (final.value ? finalText.value : live.value ? 
 .situation .last { color: #64748b; font-size: .76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* final: what you got back, out of what you wagered */
 .result { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px 0 11px; border-radius: 12px; white-space: nowrap; animation: res-in .35s cubic-bezier(.2, 1.4, .4, 1) both; }
-.r-label { font-size: .64rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.r-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: .64rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .r-pts { font-size: 1.35rem; font-weight: 900; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .r-of { font-size: .72rem; font-weight: 700; opacity: .75; font-variant-numeric: tabular-nums; }
 .result.win { background: #16a34a; color: #fff; box-shadow: 0 2px 8px #16a34a40; }
@@ -294,23 +296,35 @@ const poolStatus = computed(() => (final.value ? finalText.value : live.value ? 
 .matchup > :deep(.team):nth-child(1) { grid-column: 1; }
 .at { grid-column: 2; grid-row: 1; align-self: center; text-align: center; font-weight: 800; color: #94a3b8; }
 
-.foot { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+.foot { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.foot.fixing { flex-wrap: wrap; }
+.foot > * { flex: none; }
+.foot > .picked { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.foot > .spacer { flex: 1; }
 .foot.ro { margin-top: 8px; }
 .picked { font-size: .85rem; color: #475569; }
 .picked b { color: #0f172a; }
 .link { background: none; border: 0; padding: 0; color: #2563eb; cursor: pointer; font: inherit; text-decoration: underline; }
-.loy { border: 1px solid #e2e8f0; background: #fff; border-radius: 999px; padding: 5px 10px; font-size: .75rem; font-weight: 700; color: #94a3b8; cursor: pointer; }
+.loy { height: 32px; border: 1px solid #e2e8f0; background: #fff; border-radius: 999px; padding: 0 10px; font-size: .75rem; font-weight: 700; color: #94a3b8; cursor: pointer; }
 .loy.on { background: #facc15; border-color: #eab308; color: #422006; }
+.loy.max { min-width: 40px; font-variant-numeric: tabular-nums; }
+.loy.max.on { background: #0f172a; border-color: #0f172a; color: #fff; }
 .stepper { display: flex; align-items: center; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
 .stepper button { width: 40px; height: 40px; border: 0; background: #f8fafc; font-size: 1.2rem; cursor: pointer; color: #0f172a; }
-.stepper button:hover { background: #e2e8f0; }
+.stepper button:hover:not(:disabled) { background: #e2e8f0; }
+.stepper button:disabled { color: #cbd5e1; cursor: default; }
 .stepper input { width: 52px; height: 40px; text-align: center; border: 0; font-size: 1.1rem; font-weight: 800; -moz-appearance: textfield; }
 .stepper input::-webkit-outer-spin-button, .stepper input::-webkit-inner-spin-button { appearance: none; margin: 0; }
 .stepper input:focus { outline: 2px solid #93c5fd; outline-offset: -2px; }
 
 @media (max-width: 520px) {
+  .result { gap: 6px; padding: 0 10px; }
+  .pk-word { display: none; }
+  .stepper button { width: 36px; }
+  .stepper input { width: 44px; }
   .matchup { grid-template-columns: 1fr; gap: 6px; }
   .matchup > :deep(.team) { grid-column: 1 !important; }
   .at { display: none; }
 }
+@media (max-width: 380px) { .meta .r-of { display: none; } }
 </style>
