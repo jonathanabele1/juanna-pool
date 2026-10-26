@@ -25,7 +25,7 @@ def _ranks(rows: list[dict], key: str) -> list[int]:
 
 @router.get("/players")
 def players(me: dict = Depends(auth.current_user)):
-    return [{"id": u["id"], "displayName": u["displayName"], "me": u["id"] == me["id"]}
+    return [{"id": u["id"], "displayName": u["displayName"], "teamName": u["teamName"], "me": u["id"] == me["id"]}
             for u in db.list_users() if u["active"] and in_league(u, me["id"])]
 
 
@@ -39,7 +39,8 @@ def player_weeks(user_id: int, me: dict = Depends(auth.current_user)):
 def player_week(user_id: int, n: int, me: dict = Depends(auth.current_user)):
     player = _player(user_id, me)
     out = user_week(user_id, n)
-    out["player"] = {"id": player["id"], "displayName": player["displayName"], "me": user_id == me["id"]}
+    out["player"] = {"id": player["id"], "displayName": player["displayName"], "teamName": player["teamName"],
+                     "me": user_id == me["id"]}
     if user_id == me["id"] or not out.get("games"):
         return out
     results = db.get_results()
@@ -76,7 +77,7 @@ def week_standings(n: int, me: dict = Depends(auth.current_user)):
         rows.append({
             "id": e["user"]["id"], "name": e["user"]["displayName"], "me": e["user"]["id"] == me["id"],
             "score": s["score"], "projected": s["ifEndedNow"], "max": s["maxScore"], "liveMax": s["liveMax"],
-            "wins": s["wins"], "losses": s["losses"], "pushes": s["pushes"],
+            "wins": s["wins"], "losses": s["losses"], "pushes": s["pushes"], "accuracy": s["accuracy"],
             "live": s["live"], "pending": s["pending"], "complete": s["complete"],
             "penalties": s["penaltyTotal"], "adjustment": s["adjustment"],
             "win": win.get(e["user"]["id"]),  # chance to win the week, while it's still being decided
@@ -119,7 +120,7 @@ def season_standings(me: dict = Depends(auth.current_user)):
         rows.append({
             "id": uid, "name": names[uid], "me": uid == me["id"],
             "total": s["total"], "average": s["average"], "weeksPlayed": s["weeksPlayed"],
-            "record": s["record"], "best": s["best"], "weeklyWins": weekly_wins.get(uid, 0),
+            "record": s["record"], "accuracy": s["accuracy"], "best": s["best"], "weeklyWins": weekly_wins.get(uid, 0),
             "penalties": s["penalties"],
             # live: the total if the games on now ended as they stand
             "projected": s["total"] + sum(x["ifEndedNow"] - x["score"] for _, x in weeks),

@@ -68,14 +68,14 @@ async function submit() {
 
 <style scoped>
 .loginwrap { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
-.login { width: min(380px, 100%); background: #fff; border-radius: 20px; padding: 26px 22px; box-shadow: 0 10px 40px #0f172a14; display: flex; flex-direction: column; gap: 12px; }
+.login { width: min(380px, 100%); background: var(--card); border-radius: 20px; padding: 26px 22px; box-shadow: 0 10px 40px #0f172a14; display: flex; flex-direction: column; gap: 12px; }
 h1 { margin: 0; font-size: 1.5rem; }
-.sub { margin: -6px 0 6px; color: #64748b; }
-label { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; font-weight: 600; color: #334155; }
-label small { font-weight: 400; color: #94a3b8; }
-input { padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 1rem; }
+.sub { margin: -6px 0 6px; color: var(--muted); }
+label { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; font-weight: 600; color: var(--text-2); }
+label small { font-weight: 400; color: var(--faint); }
+input { padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 10px; font-size: 1rem; }
 input:focus { outline: 2px solid #2563eb; border-color: transparent; }
-.err { margin: 0; color: #b91c1c; font-size: .85rem; }
-.hint { margin: 0; color: #64748b; font-size: .85rem; text-align: center; }
-.link { border: 0; background: none; color: #2563eb; font-weight: 600; cursor: pointer; padding: 0; }
+.err { margin: 0; color: var(--neg); font-size: .85rem; }
+.hint { margin: 0; color: var(--muted); font-size: .85rem; text-align: center; }
+.link { border: 0; background: none; color: var(--blue); font-weight: 600; cursor: pointer; padding: 0; }
 </style>

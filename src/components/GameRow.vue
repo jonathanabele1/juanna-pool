@@ -295,13 +295,13 @@ const moveChance = computed(() => {
 
 <style scoped>
 /* read-only card: quick way back into edit mode, so you don't have to scroll to the top */
-.edit-btn { display: inline-flex; align-items: center; gap: 4px; min-height: 30px; padding: 0 11px; border: 1px solid #dbeafe; border-radius: 999px; background: #fff; color: #2563eb; font-size: .78rem; font-weight: 700; cursor: pointer; transition: background .12s, border-color .12s; }
-.edit-btn:hover { background: #eff6ff; border-color: #bfdbfe; }
-.edit-btn:active { background: #dbeafe; }
+.edit-btn { display: inline-flex; align-items: center; gap: 4px; min-height: 30px; padding: 0 11px; border: 1px solid var(--blue-line); border-radius: 999px; background: var(--card); color: var(--blue); font-size: .78rem; font-weight: 700; cursor: pointer; transition: background .12s, border-color .12s; }
+.edit-btn:hover { background: var(--blue-tint); border-color: var(--blue-line); }
+.edit-btn:active { background: var(--blue-tint-2); }
 .edit-btn:focus-visible { outline: 2px solid #93c5fd; outline-offset: 1px; }
 .edit-btn svg { width: 12px; height: 12px; }
-.pill.pastdue { background: #fef3c7; color: #92400e; }
-.game { position: relative; background: #fff; border-radius: 18px; padding: 12px; box-shadow: 0 1px 2px #0000000d, 0 4px 14px #0000000a; transition: opacity .15s; }
+.pill.pastdue { background: var(--amber-tint); color: var(--amber-ink); }
+.game { position: relative; background: var(--card); border-radius: 18px; padding: 12px; box-shadow: 0 1px 2px #0000000d, 0 4px 14px #0000000a; transition: opacity .15s; }
 .game.nopick.ro { opacity: .6; }
 .stepper.off, .loy:disabled { opacity: .45; }
 .stepper.off button, .loy:disabled { cursor: not-allowed; }
@@ -313,12 +313,12 @@ const moveChance = computed(() => {
 .spacer { flex: 1; }
 
 
-.pill { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; font-size: .72rem; font-weight: 700; border-radius: 999px; background: #f1f5f9; color: #475569; white-space: nowrap; }
+.pill { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; font-size: .72rem; font-weight: 700; border-radius: 999px; background: var(--soft); color: var(--text-2); white-space: nowrap; }
 .pill b { margin-left: 5px; }
-.pill.day { background: #fff; box-shadow: inset 0 0 0 1px #e2e8f0; }
-.pill.final { background: #0f172a; color: #fff; letter-spacing: .04em; text-transform: uppercase; }
+.pill.day { background: var(--card); box-shadow: inset 0 0 0 1px var(--line); }
+.pill.final { background: var(--ink); color: var(--on-ink); letter-spacing: .04em; text-transform: uppercase; }
 .pill.live { background: #dc2626; color: #fff; gap: 6px; font-variant-numeric: tabular-nums; }
-.pulse { width: 7px; height: 7px; border-radius: 50%; background: #fff; animation: pulse 1.4s ease-in-out infinite; }
+.pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--card); animation: pulse 1.4s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.7); } }
 @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
 
@@ -332,41 +332,41 @@ const moveChance = computed(() => {
 .game.final.is-loss { box-shadow: inset 5px 0 0 #ef4444, 0 1px 2px #0000000d; }
 .game.final { padding-left: 17px; }
 
-.situation { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; margin: 10px 0 0; padding: 8px 12px; border-radius: 12px; background: #f8fafc; font-size: .8rem; color: #334155; }
+.situation { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; margin: 10px 0 0; padding: 8px 12px; border-radius: 12px; background: var(--card-2); font-size: .8rem; color: var(--text-2); }
 .sit { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 /* the chance your pick covers: the number does the talking, colored only when it's leaning hard one way */
 .chance { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.05; font-variant-numeric: tabular-nums; }
-.chance b { font-size: 1.2rem; font-weight: 800; letter-spacing: -.02em; color: #0f172a; }
-.chance small { font-size: .6rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #94a3b8; white-space: nowrap; }
-.chance small.push { margin-top: 2px; color: #a16207; }
-.chance.good b { color: #15803d; }
-.chance.bad b { color: #b91c1c; }
+.chance b { font-size: 1.2rem; font-weight: 800; letter-spacing: -.02em; color: var(--text); }
+.chance small { font-size: .6rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); white-space: nowrap; }
+.chance small.push { margin-top: 2px; color: var(--amber-ink); }
+.chance.good b { color: var(--pos); }
+.chance.bad b { color: var(--neg); }
 .move-chance { margin-left: 7px; padding-left: 7px; border-left: 1px solid currentColor; font-variant-numeric: tabular-nums; }
 .situation .down { font-weight: 600; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.situation .down em { font-style: normal; font-size: .64rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; background: #fee2e2; color: #b91c1c; }
-.situation .last { color: #64748b; font-size: .76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.situation .down em { font-style: normal; font-size: .64rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; background: var(--red-tint); color: var(--neg); }
+.situation .last { color: var(--muted); font-size: .76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* final: what you got back, out of what you wagered */
 .result { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px 0 11px; border-radius: 12px; white-space: nowrap; animation: res-in .35s cubic-bezier(.2, 1.4, .4, 1) both; }
 .r-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: .64rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .r-pts { font-size: 1.35rem; font-weight: 900; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .r-of { font-size: .72rem; font-weight: 700; opacity: .75; font-variant-numeric: tabular-nums; }
 .result.win { background: #16a34a; color: #fff; box-shadow: 0 2px 8px #16a34a40; }
-.result.loss { background: #fef2f2; color: #b91c1c; box-shadow: inset 0 0 0 1.5px #fecaca; }
-.result.push { background: #fef3c7; color: #92400e; box-shadow: inset 0 0 0 1.5px #fcd34d; }
+.result.loss { background: var(--red-tint); color: var(--neg); box-shadow: inset 0 0 0 1.5px #fecaca; }
+.result.push { background: var(--amber-tint); color: var(--amber-ink); box-shadow: inset 0 0 0 1.5px #fcd34d; }
 /* live: same shape, lighter, since it can still change */
 .result.live { animation: none; }
-.result.live.win { background: #dcfce7; color: #166534; box-shadow: inset 0 0 0 1.5px #86efac; }
-.result.live.loss { background: #fff5f5; color: #dc2626; box-shadow: inset 0 0 0 1.5px #fca5a5; }
-.result.live.push { background: #fefce8; color: #a16207; box-shadow: inset 0 0 0 1.5px #fde047; }
+.result.live.win { background: var(--green-tint); color: var(--pos); box-shadow: inset 0 0 0 1.5px #86efac; }
+.result.live.loss { background: var(--red-tint); color: var(--neg); box-shadow: inset 0 0 0 1.5px #fca5a5; }
+.result.live.push { background: var(--amber-tint); color: var(--amber-ink); box-shadow: inset 0 0 0 1.5px #fde047; }
 @keyframes res-in { from { transform: scale(.85); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .result { animation: none; } }
-.pill.started { background: #fee2e2; color: #991b1b; }
-.pill.now.changed { background: #fef3c7; color: #92400e; box-shadow: 0 0 0 2px #fcd34d; }
-.pill.now.flipped { background: #fee2e2; color: #991b1b; box-shadow: 0 0 0 2px #fca5a5; }
+.pill.started { background: var(--red-tint); color: var(--neg); }
+.pill.now.changed { background: var(--amber-tint); color: var(--amber-ink); box-shadow: 0 0 0 2px #fcd34d; }
+.pill.now.flipped { background: var(--red-tint); color: var(--neg); box-shadow: 0 0 0 2px #fca5a5; }
 
 .matchup { display: grid; grid-template-columns: 1fr 28px 1fr; align-items: stretch; gap: 0; }
 .matchup > :deep(.team):nth-child(1) { grid-column: 1; }
-.at { grid-column: 2; grid-row: 1; align-self: center; text-align: center; font-weight: 800; color: #94a3b8; }
+.at { grid-column: 2; grid-row: 1; align-self: center; text-align: center; font-weight: 800; color: var(--faint); }
 
 .foot { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
 .foot.fixing { flex-wrap: wrap; }
@@ -374,17 +374,17 @@ const moveChance = computed(() => {
 .foot > .picked { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .foot > .spacer { flex: 1; }
 .foot.ro { margin-top: 8px; }
-.picked { font-size: .85rem; color: #475569; }
-.picked b { color: #0f172a; }
-.link { background: none; border: 0; padding: 0; color: #2563eb; cursor: pointer; font: inherit; text-decoration: underline; }
-.loy { height: 32px; border: 1px solid #e2e8f0; background: #fff; border-radius: 999px; padding: 0 10px; font-size: .75rem; font-weight: 700; color: #94a3b8; cursor: pointer; }
+.picked { font-size: .85rem; color: var(--text-2); }
+.picked b { color: var(--text); }
+.link { background: none; border: 0; padding: 0; color: var(--blue); cursor: pointer; font: inherit; text-decoration: underline; }
+.loy { height: 32px; border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 0 10px; font-size: .75rem; font-weight: 700; color: var(--faint); cursor: pointer; }
 .loy.on { background: #facc15; border-color: #eab308; color: #422006; }
 .loy.max { min-width: 40px; font-variant-numeric: tabular-nums; }
-.loy.max.on { background: #0f172a; border-color: #0f172a; color: #fff; }
-.stepper { display: flex; align-items: center; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
-.stepper button { width: 40px; height: 40px; border: 0; background: #f8fafc; font-size: 1.2rem; cursor: pointer; color: #0f172a; }
-.stepper button:hover:not(:disabled) { background: #e2e8f0; }
-.stepper button:disabled { color: #cbd5e1; cursor: default; }
+.loy.max.on { background: var(--ink); border-color: var(--ink); color: var(--on-ink); }
+.stepper { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.stepper button { width: 40px; height: 40px; border: 0; background: var(--card-2); font-size: 1.2rem; cursor: pointer; color: var(--text); }
+.stepper button:hover:not(:disabled) { background: var(--chip); }
+.stepper button:disabled { color: var(--faintest); cursor: default; }
 .stepper input { width: 52px; height: 40px; text-align: center; border: 0; font-size: 1.1rem; font-weight: 800; -moz-appearance: textfield; }
 .stepper input::-webkit-outer-spin-button, .stepper input::-webkit-inner-spin-button { appearance: none; margin: 0; }
 .stepper input:focus { outline: 2px solid #93c5fd; outline-offset: -2px; }

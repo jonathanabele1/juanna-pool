@@ -1,5 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
+import { readable } from '../pool.js'
+import { isDark } from '../theme.js'
 
 const props = defineProps({
   raw: String,           // name exactly as on the sheet (what goes in the email)
@@ -45,7 +47,9 @@ function onDbl() { if (props.peekable) emit('peek', { undo: true }) }
 const broken = ref(false)
 const OUTCOME_COLOR = { win: '#16a34a', loss: '#dc2626', push: '#d97706' }
 const LIVE_COLOR = { win: '#4ade80', loss: '#f87171', push: '#facc15' }  // lighter shades of the final colors
-const accent = computed(() => OUTCOME_COLOR[props.outcome] || LIVE_COLOR[props.live] || (props.team?.color ? `#${props.team.color}` : '#16a34a'))
+// a team color picks the card's border and check: lifted on the dark theme so a navy or black team still shows
+const accent = computed(() => OUTCOME_COLOR[props.outcome] || LIVE_COLOR[props.live]
+  || (props.team?.color ? readable(`#${props.team.color}`, isDark.value, 3) : '#16a34a'))
 
 const pickem = computed(() => !props.spread)
 const spreadText = computed(() => (props.noLine ? '—' : pickem.value ? 'PK' : props.role === 'fav' ? `−${props.spread}` : `+${props.spread}`))
@@ -113,7 +117,7 @@ const atsText = computed(() => {
       <span
         v-if="showChip"
         :class="['chip', { loy: isLoy }]"
-        :style="{ '--chip': chipColor, '--ink': chipInk }"
+        :style="{ '--chip-bg': chipColor, '--chip-ink': chipInk }"
         :title="`${wager} points on ${nick}`"
       >
         <i v-if="isLoy" class="star" aria-hidden="true">★</i>
@@ -137,20 +141,20 @@ const atsText = computed(() => {
 <style scoped>
 .team {
   position: relative; display: flex; flex-direction: column; text-align: left; width: 100%; padding: 0; overflow: hidden;
-  background: #fff; border: 2px solid #e5e7eb; border-radius: 14px; cursor: pointer;
+  background: var(--card); border: 2px solid var(--line); border-radius: 14px; cursor: pointer;
   font: inherit; color: inherit; transition: border-color .15s, box-shadow .15s, transform .08s, opacity .15s, background .15s;
 }
 /* press and hold opens the team's stats: no text selection or iOS callout while holding */
 .team.peekable { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: manipulation; }
-.team:hover { border-color: #cbd5e1; box-shadow: 0 2px 8px #0000000f; }
+.team:hover { border-color: var(--line-strong); box-shadow: 0 2px 8px #0000000f; }
 .team:active { transform: scale(.985); }
 .team:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
 .team.selected {
-  border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, #fff);
+  border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--card));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 .team.static { cursor: default; }
-.team.static:hover { border-color: #e5e7eb; box-shadow: none; }
+.team.static:hover { border-color: var(--line); box-shadow: none; }
 .team.static.selected:hover { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
 .team.static:active { transform: none; }
 .team.dimmed { opacity: .72; }
@@ -160,28 +164,28 @@ const atsText = computed(() => {
 .strip { display: flex; justify-content: space-between; align-items: baseline; padding: 5px 12px; }
 .role { font-size: .68rem; font-weight: 800; letter-spacing: .09em; }
 .sp { font-size: 1.2rem; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
-.fav .strip { background: #0f172a; color: #fff; }
+.fav .strip { background: var(--hero); color: #fff; }
 .fav .sp { color: #fde047; }
-.dog .strip { background: #ffedd5; color: #9a3412; }
-.pickem .strip { background: #e2e8f0; color: #334155; }
-.pickem .sp { color: #334155; }
-.fav { border-color: #cbd5e1; }
+.dog .strip { background: var(--amber-tint); color: var(--amber-ink); }
+.pickem .strip { background: var(--chip); color: var(--text-2); }
+.pickem .sp { color: var(--text-2); }
+.fav { border-color: var(--line-strong); }
 
 .body { display: flex; align-items: center; gap: 12px; padding: 10px 12px 12px; }
 .logo { width: 52px; height: 52px; object-fit: contain; flex: none; }
-.logo.fallback { display: grid; place-items: center; border-radius: 50%; background: #e2e8f0; color: #475569; font-weight: 800; }
+.logo.fallback { display: grid; place-items: center; border-radius: 50%; background: var(--chip); color: var(--text-2); font-weight: 800; }
 .names { display: flex; flex-direction: column; gap: 1px; line-height: 1.15; min-width: 0; }
-.city { font-size: .75rem; color: #64748b; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.city { font-size: .75rem; color: var(--muted); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .where { font-size: .58rem; font-weight: 800; letter-spacing: .06em; padding: 1px 6px; border-radius: 999px; }
-.where.home { background: #e0e7ff; color: #3730a3; }
-.where.away { background: #f1f5f9; color: #475569; }
+.where.home { background: var(--blue-tint-2); color: var(--blue-ink); }
+.where.away { background: var(--soft); color: var(--text-2); }
 .nick { font-size: 1.1rem; font-weight: 800; overflow-wrap: anywhere; }
 .rec { display: flex; gap: 6px; align-items: baseline; margin-top: 2px; font-size: .75rem; }
-.su { font-weight: 700; color: #334155; font-variant-numeric: tabular-nums; }
-.ats { color: #64748b; font-weight: 600; font-variant-numeric: tabular-nums; }
+.su { font-weight: 700; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.ats { color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
 
-.score { margin-left: auto; font-size: 1.6rem; font-weight: 800; color: #334155; font-variant-numeric: tabular-nums; }
-.score.trailing { color: #94a3b8; font-weight: 700; }
+.score { margin-left: auto; font-size: 1.6rem; font-weight: 800; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.score.trailing { color: var(--faint); font-weight: 700; }
 .ball { font-style: normal; font-size: .8rem; margin-left: 6px; vertical-align: 2px; }
 .check {
   flex: none; width: 22px; height: 22px; border-radius: 50%;
@@ -192,8 +196,8 @@ const atsText = computed(() => {
 .chip {
   flex: none; margin-left: auto; width: 50px; height: 50px; border-radius: 50%;
   display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1;
-  background: var(--chip); color: var(--ink);
-  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--ink) 22%, transparent), 0 3px 8px #0f172a2e;
+  background: var(--chip-bg); color: var(--chip-ink);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--chip-ink) 22%, transparent), 0 0 0 1.5px var(--disc-ring), 0 3px 8px #0f172a2e;
   animation: chip-drop .38s cubic-bezier(.2, 1.4, .4, 1) both;
 }
 .chip b { font-size: 1.4rem; font-weight: 900; font-variant-numeric: tabular-nums; letter-spacing: -.03em; animation: chip-pop .3s ease-out; }

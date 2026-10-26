@@ -1,13 +1,14 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { getLines, getWeeks, getMe, getAnnouncement, getPlayers, isDemoLive, setDemoLive } from './api.js'
+import { getLines, getWeeks, getMe, getAnnouncement, getPlayers, getPlayerWeeks, isDemoLive, setDemoLive } from './api.js'
+import { mailPrefs } from './mailPrefs.js'
 import WeekBar from './components/WeekBar.vue'
 import AccountMenu from './components/AccountMenu.vue'
+import ViewingMenu from './components/ViewingMenu.vue'
 import PicksView from './PicksView.vue'
+import PlayerWeek from './PlayerWeek.vue'
 import StatsView from './StatsView.vue'
 import StandingsView from './StandingsView.vue'
-import PlayerView from './PlayerView.vue'
-import PlayerPicker from './components/PlayerPicker.vue'
 import AdminView from './AdminView.vue'
 import LoginView from './LoginView.vue'
 
@@ -21,8 +22,8 @@ const currentWeek = ref(null)
 const summaries = ref([])
 const statsRefresh = ref(0)     // bumped as live scores come in: the stats page reloads in place
 const players = ref([])
-const viewing = ref(null)       // player opened from the league table
-const statsPlayer = ref(null)   // whose season the stats tab shows (null: yours)
+const viewing = ref(null)       // whose picks and season the Picks and Season stats tabs show (null: yours)
+const theirSummaries = ref([])  // the week bar's scores while viewing someone else
 const announcement = ref('')
 
 // admins can switch admin mode off to see (and use) the site exactly as a regular player does
@@ -60,18 +61,42 @@ const onLoggedOut = () => { user.value = null }
 async function refreshPlayers() {
   try { players.value = await getPlayers() } catch { return }
   const ids = new Set(players.value.map(p => p.id))
-  if (statsPlayer.value && !ids.has(statsPlayer.value)) statsPlayer.value = null   // back to you
-  if (viewing.value && !ids.has(viewing.value)) viewing.value = null              // back to the league table
+  if (viewing.value && !ids.has(viewing.value)) viewing.value = null   // hidden or deleted: back to you
 }
 watch(tab, t => { if (user.value && (t === 'stats' || t === 'league')) refreshPlayers() })
 
-function openTab(t) {
-  if (t === 'league' && tab.value === 'league') viewing.value = null  // tapping the tab again goes back to the table
-  tab.value = t
+const openTab = t => { tab.value = t }
+
+// ---- viewing: you, or another player (the switcher in the header, or a tap on the League tab) ----
+// your own team name comes from your email settings, so a change there shows right away
+const me = computed(() => {
+  const p = players.value.find(x => x.me)
+  return p ? { ...p, teamName: mailPrefs.teamName || p.teamName } : null
+})
+const other = computed(() => players.value.find(p => p.id === viewing.value && !p.me) || null)
+const shown = computed(() => other.value || me.value)
+
+function view(id) {
+  viewing.value = id === me.value?.id ? null : id
+  if (tab.value !== 'stats') tab.value = 'picks'   // from League or Admin: straight to their picks
 }
-function editMine(w) { week.value = w; viewing.value = null; tab.value = 'picks' }
-const me = computed(() => players.value.find(p => p.me))
-const statsFor = computed(() => statsPlayer.value ?? me.value?.id ?? null)
+// League: tap a player for their picks (that week's, from the week table)
+function openPlayer(id, w) {
+  if (w) week.value = w
+  view(id)
+  tab.value = 'picks'
+  window.scrollTo({ top: 0 })
+}
+async function refreshTheirs() {
+  const id = viewing.value
+  if (!id) return
+  try {
+    const s = await getPlayerWeeks(id)
+    if (id === viewing.value) theirSummaries.value = s
+  } catch { theirSummaries.value = [] }
+  statsRefresh.value++
+}
+watch(() => other.value?.id, () => { theirSummaries.value = []; refreshTheirs() })
 
 onMounted(async () => {
   window.addEventListener('pool:logged-out', onLoggedOut)
@@ -94,6 +119,7 @@ watch(asAdmin, on => { if (!on && user.value && tab.value === 'admin') tab.value
           <p class="sub">2026 season</p>
         </div>
         <div class="topright">
+          <ViewingMenu v-if="players.length > 1" :model-value="shown?.id" :players="players" @update:model-value="view" />
           <AccountMenu :user="user" :admin-mode="asAdmin" :demo-live="demoLive" @logout="onLoggedOut" @demo="toggleDemo" @admin="adminMode = $event" />
         </div>
       </header>
@@ -111,21 +137,16 @@ watch(asAdmin, on => { if (!on && user.value && tab.value === 'admin') tab.value
       <p v-if="announcement" class="announce">📣 {{ announcement }}</p>
 
       <template v-if="week">
+        <!-- yours stays mounted while you look at someone else, so unsaved edits are still there when you come back -->
         <div v-show="tab === 'picks'">
-          <WeekBar v-model="week" :current-week="currentWeek" :summaries="summaries" />
-          <PicksView :key="`${week}-${asAdmin}`" :week="week" :current-week="currentWeek" :is-admin="asAdmin" @saved="refreshSummaries" @scored="refreshSummaries" />
-        </div>
-        <template v-if="tab === 'league'">
-          <PlayerView v-if="viewing" v-model:player-id="viewing" :players="players" :current-week="currentWeek" :week="week"
-                      @back="viewing = null" @mine="editMine" />
-          <StandingsView v-else :current-week="currentWeek" @open="viewing = $event" />
-        </template>
-        <template v-if="tab === 'stats'">
-          <div v-if="players.length > 1" class="statsfor">
-            <PlayerPicker :model-value="statsFor" :players="players" @update:model-value="statsPlayer = $event" />
+          <WeekBar v-model="week" :current-week="currentWeek" :summaries="other ? theirSummaries : summaries" />
+          <PlayerWeek v-if="other" :key="`${other.id}-${week}`" :player="other" :week="week" @scored="refreshTheirs" @mine="viewing = null" />
+          <div v-show="!other">
+            <PicksView :key="`${week}-${asAdmin}`" :week="week" :current-week="currentWeek" :is-admin="asAdmin" @saved="refreshSummaries" @scored="refreshSummaries" />
           </div>
-          <StatsView :user-id="statsFor" :mine="!statsPlayer || statsPlayer === me?.id" :refresh="statsRefresh" />
-        </template>
+        </div>
+        <StandingsView v-if="tab === 'league'" :current-week="currentWeek" @open="openPlayer" />
+        <StatsView v-if="tab === 'stats'" :user-id="shown?.id" :mine="!other" :player="shown" :refresh="statsRefresh" @mine="viewing = null" />
         <AdminView v-if="tab === 'admin' && asAdmin" :me="user" :current-week="currentWeek || week" @announcement="announcement = $event" />
       </template>
     </div>

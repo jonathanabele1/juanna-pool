@@ -2,6 +2,7 @@
 // Everyone's pick on one game: a mini scoreboard, the pool/public split, then one list grouped by side.
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { pct, teamColors, textColor } from '../pool.js'
+import { isDark } from '../theme.js'
 
 const props = defineProps({
   sides: Array,      // [{ key, abbr, name, logo, spread, color, alternateColor }] in display order (away, home)
@@ -12,8 +13,8 @@ const props = defineProps({
 })
 const emit = defineEmits(['close'])
 
-const colors = computed(() => teamColors(...props.sides))
-const ink = i => textColor(colors.value[i])
+const colors = computed(() => teamColors(...props.sides, isDark.value))
+const ink = i => textColor(colors.value[i], isDark.value)
 const picked = computed(() => props.pool.fav.count + props.pool.dog.count)
 const poolPct = computed(() => props.sides.map(s => pct(props.pool[s.key].count, picked.value)))
 const pub = computed(() => {
@@ -129,14 +130,14 @@ onUnmounted(() => {
 <style scoped>
 .scrim { position: fixed; inset: 0; z-index: 60; background: #0f172a66; display: grid; place-items: center; padding: 16px; }
 .sheet {
-  position: relative; width: min(440px, 100%); max-height: min(86vh, 720px); overflow: auto; background: #fff;
+  position: relative; width: min(440px, 100%); max-height: min(86vh, 720px); overflow: auto; background: var(--card);
   border-radius: 20px; box-shadow: 0 20px 50px #0f172a40; outline: none;
 }
 .x {
   position: absolute; top: 10px; right: 10px; z-index: 1; width: 32px; height: 32px; border: 0; border-radius: 50%;
-  background: #f1f5f9; color: #475569; font-size: 1.2rem; line-height: 1; cursor: pointer;
+  background: var(--soft); color: var(--text-2); font-size: 1.2rem; line-height: 1; cursor: pointer;
 }
-.x:hover { background: #e2e8f0; }
+.x:hover { background: var(--chip); }
 
 /* mini scoreboard */
 .board { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; padding: 18px 52px 14px; }
@@ -147,16 +148,16 @@ onUnmounted(() => {
 .tn { display: flex; flex-direction: column; line-height: 1.1; }
 .home .tn { align-items: flex-end; }
 .tn b { font-size: .95rem; font-weight: 800; }
-.tn small { font-size: .72rem; font-weight: 700; color: #94a3b8; font-variant-numeric: tabular-nums; }
+.tn small { font-size: .72rem; font-weight: 700; color: var(--faint); font-variant-numeric: tabular-nums; }
 .sc { margin: 0 2px; font-size: 1.6rem; font-weight: 800; font-variant-numeric: tabular-nums; }
 .away .sc { margin-left: auto; } .home .sc { margin-right: auto; }
-.trail .sc { color: #94a3b8; }
-.st { grid-column: 2; grid-row: 1; font-size: .68rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: #64748b; white-space: nowrap; }
+.trail .sc { color: var(--faint); }
+.st { grid-column: 2; grid-row: 1; font-size: .68rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); white-space: nowrap; }
 
 /* split bars (same look as the game card) */
-.split { padding: 10px 18px 12px; border-top: 1px solid #f1f5f9; border-bottom: 1px solid #f1f5f9; background: #fbfcfe; display: flex; flex-direction: column; gap: 4px; }
+.split { padding: 10px 18px 12px; border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); background: var(--card-2); display: flex; flex-direction: column; gap: 4px; }
 .ln { display: grid; grid-template-columns: 48px 40px minmax(0, 1fr) 40px; align-items: center; gap: 8px; min-height: 22px; }
-.ln .lbl { font-size: .6rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #94a3b8; }
+.ln .lbl { font-size: .6rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
 .ln b { font-size: .8rem; font-weight: 800; font-variant-numeric: tabular-nums; }
 .ln b.r { text-align: right; }
 .pbar { display: flex; gap: 2px; height: 6px; border-radius: 99px; overflow: hidden; }
@@ -167,29 +168,29 @@ onUnmounted(() => {
 .grp + .grp { margin-top: 6px; }
 h4 {
   display: flex; align-items: center; gap: 8px; margin: 10px 0 2px; padding-left: 10px;
-  border-left: 3px solid var(--c, #cbd5e1); font-size: .86rem; font-weight: 800; color: #0f172a;
+  border-left: 3px solid var(--c, var(--line-strong)); font-size: .86rem; font-weight: 800; color: var(--text);
 }
 h4 img { width: 20px; height: 20px; object-fit: contain; }
-h4 small { margin-left: auto; font-size: .72rem; font-weight: 600; color: #94a3b8; }
+h4 small { margin-left: auto; font-size: .72rem; font-weight: 600; color: var(--faint); }
 ul { list-style: none; margin: 0; padding: 0; }
 li { display: flex; align-items: center; gap: 10px; padding: 7px 10px 7px 13px; border-radius: 10px; font-size: .9rem; }
-li.me { background: #eff6ff; }
+li.me { background: var(--blue-tint); }
 .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .nm em { font-style: normal; font-size: .58rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; background: #2563eb; color: #fff; padding: 1px 6px; border-radius: 99px; margin-left: 6px; vertical-align: 2px; }
-.nobody { margin: 0; padding: 6px 13px; font-size: .8rem; color: #cbd5e1; }
+.nobody { margin: 0; padding: 6px 13px; font-size: .8rem; color: var(--faintest); }
 
 .pt {
   display: inline-flex; align-items: center; gap: 4px; min-width: 44px; justify-content: center;
-  padding: 2px 10px; border-radius: 99px; background: #f1f5f9; color: #0f172a;
+  padding: 2px 10px; border-radius: 99px; background: var(--soft); color: var(--text);
   font-size: .8rem; font-weight: 800; font-variant-numeric: tabular-nums;
 }
 .pt i { font-style: normal; font-size: .72rem; }
-.pt.win { background: #dcfce7; color: #166534; }
-.pt.loss { background: #fee2e2; color: #991b1b; }
-.pt.push { background: #fef3c7; color: #92400e; }
-.pt.live-win { background: #f0fdf4; color: #15803d; box-shadow: inset 0 0 0 1px #86efac; }
-.pt.live-loss { background: #fff5f5; color: #dc2626; box-shadow: inset 0 0 0 1px #fca5a5; }
-.legend { display: flex; gap: 14px; margin: 12px 0 0; padding-left: 13px; font-size: .72rem; color: #94a3b8; }
+.pt.win { background: var(--green-tint); color: var(--pos); }
+.pt.loss { background: var(--red-tint); color: var(--neg); }
+.pt.push { background: var(--amber-tint); color: var(--amber-ink); }
+.pt.live-win { background: var(--green-tint); color: var(--pos); box-shadow: inset 0 0 0 1px #86efac; }
+.pt.live-loss { background: var(--red-tint); color: var(--neg); box-shadow: inset 0 0 0 1px #fca5a5; }
+.legend { display: flex; gap: 14px; margin: 12px 0 0; padding-left: 13px; font-size: .72rem; color: var(--faint); }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend .pt { min-width: 0; width: 18px; height: 10px; padding: 0; }
 .pt.loy { box-shadow: inset 0 0 0 2px #eab308; }

@@ -3,6 +3,7 @@
 // Pool = how the pool picked it (once it kicks off; tap for everyone's pick). Public = DraftKings' % of bets.
 import { computed } from 'vue'
 import { pct, teamColors, textColor } from '../pool.js'
+import { isDark } from '../theme.js'
 
 const props = defineProps({
   sides: Array,     // [{ key: 'fav'|'dog', abbr, name, color, alternateColor }] in display order (away, home)
@@ -12,8 +13,8 @@ const props = defineProps({
 })
 defineEmits(['details'])
 
-const colors = computed(() => teamColors(...props.sides))
-const ink = i => textColor(colors.value[i])
+const colors = computed(() => teamColors(...props.sides, isDark.value))
+const ink = i => textColor(colors.value[i], isDark.value)
 
 const revealed = computed(() => !!props.pool?.revealed)
 const picked = computed(() => (revealed.value ? props.pool.fav.count + props.pool.dog.count : 0))
@@ -63,21 +64,21 @@ const pubTitle = computed(() => (pub.value
 </template>
 
 <style scoped>
-.insights { margin-top: 10px; padding-top: 8px; border-top: 1px solid #f1f5f9; display: flex; flex-direction: column; gap: 2px; }
+.insights { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line-soft); display: flex; flex-direction: column; gap: 2px; }
 .ln {
   display: grid; grid-template-columns: 48px 40px minmax(0, 1fr) 40px 12px; align-items: center; gap: 8px;
   width: 100%; min-height: 24px; padding: 0; border: 0; background: none; font: inherit; text-align: left; color: inherit;
 }
 button.ln { cursor: pointer; border-radius: 8px; }
 button.ln:hover .pbar { filter: brightness(1.08); }
-button.ln:hover .go { color: #1d4ed8; }
+button.ln:hover .go { color: var(--blue); }
 button.ln:focus-visible { outline: 2px solid #93c5fd; outline-offset: 2px; }
-.lbl { font-size: .6rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #94a3b8; }
+.lbl { font-size: .6rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
 .ln b { font-size: .8rem; font-weight: 800; font-variant-numeric: tabular-nums; }
 .ln b.r { text-align: right; }
 .ln b.me { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
 .pbar { display: flex; gap: 2px; height: 6px; border-radius: 99px; overflow: hidden; }
 .pbar i { flex: 1 1 0; min-width: 0; }
-.go { color: #94a3b8; font-weight: 800; font-size: 1rem; line-height: 1; text-align: right; }
-.wait { grid-column: 2 / -1; font-size: .74rem; color: #94a3b8; }
+.go { color: var(--faint); font-weight: 800; font-size: 1rem; line-height: 1; text-align: right; }
+.wait { grid-column: 2 / -1; font-size: .74rem; color: var(--faint); }
 </style>

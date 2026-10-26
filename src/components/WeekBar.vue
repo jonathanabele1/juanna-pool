@@ -1,27 +1,56 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+// Weeks 1–18 in one sideways strip. The selected week always sits in the middle: it glides there when you pick
+// one, and jumps there when the strip first shows or changes size (e.g. coming back to the Picks tab).
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 const props = defineProps({ modelValue: Number, currentWeek: Number, summaries: Array })
-defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue'])
 
 const WEEKS = Array.from({ length: 18 }, (_, i) => i + 1)
 const byWeek = computed(() => Object.fromEntries(props.summaries.map(s => [s.week, s])))
 const strip = ref(null)
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
 
-function centerSelected() {
-  strip.value?.querySelector('.on')?.scrollIntoView({ inline: 'center', block: 'nearest' })
+// scroll only the strip (scrollIntoView would also nudge the page)
+function center(smooth) {
+  const el = strip.value
+  const btn = el?.querySelector(`[data-week="${props.modelValue}"]`)
+  if (!btn || !el.clientWidth) return
+  const left = btn.offsetLeft + btn.offsetWidth / 2 - el.clientWidth / 2
+  el.scrollTo({ left, behavior: smooth && !reduceMotion.matches ? 'smooth' : 'auto' })
 }
-onMounted(centerSelected)
-watch(() => props.modelValue, () => nextTick(centerSelected))
+
+let ro
+onMounted(() => {
+  center(false)
+  ro = new ResizeObserver(() => center(false))
+  ro.observe(strip.value)
+})
+onUnmounted(() => ro?.disconnect())
+watch(() => props.modelValue, () => center(true), { flush: 'post' })
+
+const pick = w => emit('update:modelValue', Math.min(18, Math.max(1, w)))
+function onKey(e) {
+  const step = { ArrowLeft: -1, ArrowRight: 1 }[e.key]
+  if (!step) return
+  e.preventDefault()
+  pick(props.modelValue + step)
+  // keep focus on the selected week so the next arrow press carries on from there
+  requestAnimationFrame(() => strip.value?.querySelector(`[data-week="${props.modelValue}"]`)?.focus({ preventScroll: true }))
+}
 </script>
 
 <template>
-  <nav ref="strip" class="weekbar" aria-label="Select week">
+  <nav ref="strip" class="weekbar" aria-label="Select week" @keydown="onKey">
     <button
       v-for="w in WEEKS"
       :key="w"
+      type="button"
+      :data-week="w"
+      :aria-current="w === modelValue ? 'true' : null"
+      :tabindex="w === modelValue ? 0 : -1"
       :class="['wk', { on: w === modelValue, cur: w === currentWeek, done: byWeek[w] }]"
-      @click="$emit('update:modelValue', w)"
+      @click="pick(w)"
     >
       <i v-if="byWeek[w]?.live" class="live" title="Games live now"></i>
       <span class="n">{{ w }}</span>
@@ -33,19 +62,39 @@ watch(() => props.modelValue, () => nextTick(centerSelected))
 </template>
 
 <style scoped>
-.weekbar { display: flex; gap: 6px; overflow-x: auto; padding: 4px 2px 10px; scrollbar-width: thin; }
-.wk { position: relative; flex: none; width: 52px; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 0; border-radius: 12px; border: 1px solid #e2e8f0; background: #fff; cursor: pointer; color: #475569; }
-@media (hover: hover) { .wk:not(.on):hover { background: #f8fafc; } }
-.n { font-weight: 800; font-size: 1rem; }
-.s { font-size: .68rem; font-weight: 700; color: #94a3b8; min-height: 1em; }
-.done .s { color: #15803d; }
-.done .s.neg { color: #b91c1c; }
+.weekbar {
+  --w: 52px;
+  position: relative;  /* offsetLeft is measured from here */
+  display: flex; gap: 6px; overflow-x: auto; overscroll-behavior-x: contain;
+  padding: 4px 0 12px;
+  margin-bottom: 2px;
+  scroll-snap-type: x proximity; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  /* fade the weeks out at the edges */
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 36px, #000 calc(100% - 36px), transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 36px, #000 calc(100% - 36px), transparent);
+}
+.weekbar::-webkit-scrollbar { display: none; }
+/* room on both ends so week 1 and week 18 can sit in the middle too (spacers: end padding doesn't always scroll) */
+.weekbar::before, .weekbar::after { content: ''; flex: none; width: calc(50% - var(--w) / 2 - 6px); }
+.wk {
+  position: relative; flex: none; width: var(--w); scroll-snap-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 0;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--card); color: var(--text-2); cursor: pointer;
+  transition: background .18s, border-color .18s, color .18s, transform .18s;
+}
+@media (hover: hover) { .wk:not(.on):hover { background: var(--card-2); border-color: var(--line-strong); } }
+.wk:active { transform: scale(.95); }
+.wk:focus-visible { outline: 2px solid #93c5fd; outline-offset: 2px; }
+.n { font-weight: 800; font-size: 1rem; font-variant-numeric: tabular-nums; }
+.s { font-size: .68rem; font-weight: 700; color: var(--faint); min-height: 1em; font-variant-numeric: tabular-nums; }
+.done .s { color: var(--pos); }
+.done .s.neg { color: var(--neg); }
 .cur { border-color: #93c5fd; }
-.cur .s { color: #2563eb; }
-.wk.on { background: #0f172a; border-color: #0f172a; color: #fff; }
-.live { position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: #ef4444; box-shadow: 0 0 0 2px #fff; animation: blink 1.4s ease-in-out infinite; }
-.on .live { box-shadow: 0 0 0 2px #0f172a; }
+.cur .s { color: var(--blue); }
+.wk.on { background: var(--ink); border-color: var(--ink); color: var(--on-ink); transform: translateY(-1px); box-shadow: 0 4px 12px #0f172a26; }
+.wk.on .s { color: var(--faint); }
+.live { position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: #ef4444; box-shadow: 0 0 0 2px var(--card); animation: blink 1.4s ease-in-out infinite; }
+.on .live { box-shadow: 0 0 0 2px var(--ink); }
 @keyframes blink { 50% { opacity: .35; } }
-@media (prefers-reduced-motion: reduce) { .live { animation: none; } }
-.on .s { color: #cbd5e1 !important; }
+@media (prefers-reduced-motion: reduce) { .live { animation: none; } .wk { transition: none; } }
 </style>

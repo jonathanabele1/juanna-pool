@@ -136,6 +136,16 @@ class League(unittest.TestCase):
         names = [p["displayName"] for p in self.client().get("/api/players").json()]
         self.assertEqual(sorted(names), ["Ann", "Bob", "Cal", "Me"])
 
+    def test_players_carry_their_team_name(self):
+        db.set_mail_prefs(self.ann["id"], "", "", "Ann's Army")
+        try:
+            c = self.client()
+            ann = next(p for p in c.get("/api/players").json() if p["id"] == self.ann["id"])
+            self.assertEqual(ann["teamName"], "Ann's Army")
+            self.assertEqual(c.get(f"/api/players/{self.ann['id']}/weeks/6").json()["player"]["teamName"], "Ann's Army")
+        finally:
+            db.set_mail_prefs(self.ann["id"], "", "", "")
+
     def test_hidden_accounts_are_left_out_of_the_league(self):
         db.update_user(self.bob["id"], hidden=True)
         try:

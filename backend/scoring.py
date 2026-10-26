@@ -8,11 +8,26 @@ from collections import defaultdict
 from . import cover
 
 LOY = 50
+ACC_RANGE = 14   # accuracy: a miss by this much or more (two touchdowns) scores 0
+ACC_MAX_WEIGHT = 20  # the LOY's 50 counts as 20 so one pick doesn't decide a week's accuracy
 
 
 def push_points(pts: int) -> int | float:
     """A push earns half the points (2.5 for a 5)."""
     return pts // 2 if pts % 2 == 0 else pts / 2
+
+
+def pick_accuracy(mine: float) -> float:
+    """How close a decided pick came, 0–100: a cover or push is 100, a miss loses 100/ACC_RANGE per point.
+    `mine` is the cover margin from the picked side (negative: it missed)."""
+    return 100.0 if mine >= 0 else max(0.0, 100 + 100 * mine / ACC_RANGE)
+
+
+def accuracy(picks: list[dict]) -> float | None:
+    """Points-weighted average accuracy of the decided picks (a 20 counts ten times a 2)."""
+    rated = [(min(p["points"], ACC_MAX_WEIGHT), p["accuracy"]) for p in picks if p.get("accuracy") is not None]
+    total = sum(w for w, _ in rated)
+    return round(sum(w * a for w, a in rated) / total, 1) if total else None
 
 
 def _result(g: dict, results: dict) -> dict | None:
@@ -106,6 +121,7 @@ def score_week(week: dict, results: dict) -> dict:
             entry.update(state=r["state"], favScore=r["fav"], dogScore=r["dog"])
             if r["margin"] is not None:
                 entry["margin"] = r["margin"]
+                entry["accuracy"] = pick_accuracy(r["margin"] if g.get("pick") == "fav" else -r["margin"])
                 if r["margin"] == 0:
                     entry["outcome"] = "push"
                     entry["earned"] = push_points(pts)
@@ -136,6 +152,7 @@ def score_week(week: dict, results: dict) -> dict:
         "games": per_game,
         "earned": earned,
         "wagered": sum(g["points"] for g in picked),
+        "accuracy": accuracy(picked),  # decided picks only; None until one is final
         "wins": count("win"), "losses": count("loss"), "pushes": count("push"),
         "pending": count("pending"),
         "penalties": pen,
@@ -181,12 +198,14 @@ def season_stats(scored_weeks: list[tuple[int, dict]]) -> dict:
         "worst": {"week": worst[0], "score": worst[1]} if worst else None,
         "record": {"wins": len(wins), "losses": len(decided) - len(wins),
                    "pushes": len(picks) - len(decided), "pct": rate(picks)["pct"]},
+        "accuracy": accuracy(picks),  # every decided pick of the season, not an average of the weeks
         "pointsEarned": sum(s["earned"] for _, s in weeks),
         "pointsWagered": sum(s["wagered"] for _, s in weeks),
         "penalties": sum(s["penaltyTotal"] for _, s in weeks),
         "adjustments": sum(s["adjustment"] for _, s in weeks),
         "byWeek": [{"week": n, "score": s["score"], "earned": s["earned"], "wins": s["wins"],
-                    "losses": s["losses"], "pushes": s["pushes"], "complete": s["complete"]} for n, s in weeks],
+                    "losses": s["losses"], "pushes": s["pushes"], "complete": s["complete"],
+                    "accuracy": s["accuracy"]} for n, s in weeks],
         "byTier": by_tier,
         "favorites": rate([p for p in picks if p.get("pick") == "fav"]),
         "underdogs": rate([p for p in picks if p.get("pick") == "dog"]),

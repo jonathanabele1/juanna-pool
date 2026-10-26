@@ -16,6 +16,7 @@ Source: commissioner's 2026 memo ("Football Picks, 2026"). Where the memo is amb
 | [data-model.md](data-model.md) | Proposed entities/fields derived from the rules |
 | [open-questions.md](open-questions.md) | Ambiguities and assumptions to confirm |
 | [strategy.md](strategy.md) | Math of point allocation, variance, edge, LOY timing (sim: strategy_sim.py) |
+| [odds.md](odds.md) | Cover odds (live and pregame) and Win %: the model, its accuracy, privacy, rebuilding the table |
 
 ## Glossary
 

@@ -164,7 +164,7 @@ def _user_row(r) -> dict | None:
         return None
     return {"id": r["id"], "username": r["username"], "displayName": r["display_name"] or r["username"],
             "isAdmin": bool(r["is_admin"]), "active": bool(r["active"]), "hidden": bool(r["hidden"]),
-            "createdAt": r["created_at"]}
+            "teamName": r["team_name"], "createdAt": r["created_at"]}
 
 
 def count_users() -> int:

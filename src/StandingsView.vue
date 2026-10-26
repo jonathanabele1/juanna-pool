@@ -1,5 +1,6 @@
 <script setup>
-// The whole pool: this week's leaderboard (live while games are on), then the season table. Tap a player to see their picks.
+// The whole pool: this week's leaderboard (live while games are on), then the season table. Tap a player to open
+// their picks on the Picks tab (that week's, from the week table).
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { getWeekStandings, getSeasonStandings } from './api.js'
 import { pctText } from './odds.js'
@@ -48,27 +49,30 @@ const statusText = computed(() => {
   if (!data.value) return ''
   if (!data.value.posted) return 'No lines yet'
   if (weekOver.value) return 'Final'
-  if (isLive.value) return `${g.value.live} live · ${g.value.final}/${g.value.total} final`
+  if (isLive.value) return ''   // the Live column and the live records already say it
   if (!started.value) return 'Not started'
   return `${g.value.final} of ${g.value.total} final`
 })
 
 // Week columns: Score always; Live while games are on; Win % while the week's still being decided; Max and Live max
 // while games are left to play (Live max: games on now end as they stand, every game not started covers; it makes
-// way for Win % on phones). Tap a header to sort by it, tap it again to flip. Default: Live while games are on,
+// way for Win % on phones); Acc once a pick is final (not on phones while games are on). Tap a header to sort by it, tap it again to flip. Default: Live while games are on,
 // otherwise Score.
-const COLS = { score: 'Score', projected: 'Live', win: 'Win %', max: 'Max', liveMax: 'Live max' }
+const COLS = { score: 'Score', projected: 'Live', win: 'Win %', max: 'Max', liveMax: 'Live max', accuracy: 'Acc' }
 const anyPending = computed(() => rows.value.some(r => r.pending))
 const hasWin = computed(() => rows.value.some(r => r.win != null))
+const hasAcc = computed(() => rows.value.some(r => r.accuracy != null))
 const phoneMq = window.matchMedia('(max-width: 520px)')
 const phone = ref(phoneMq.matches)
 const onPhone = e => { phone.value = e.matches }
 onMounted(() => phoneMq.addEventListener('change', onPhone))
 onUnmounted(() => phoneMq.removeEventListener('change', onPhone))
 const cols = computed(() => ['score', isLive.value && 'projected', hasWin.value && 'win', anyPending.value && 'max',
-  isLive.value && anyPending.value && !(phone.value && hasWin.value) && 'liveMax'].filter(Boolean))
+  isLive.value && anyPending.value && !(phone.value && hasWin.value) && 'liveMax',
+  hasAcc.value && !(phone.value && isLive.value) && 'accuracy'].filter(Boolean))
 // the simulation says never/certain only when it's settled (1 or 0); anything else stays off 0% and 100%
-const cell = (r, c) => (r[c] == null ? '—' : c !== 'win' ? r[c] : r[c] === 1 ? '100%' : r[c] === 0 ? '0%' : pctText(r[c]))
+const cell = (r, c) => (r[c] == null ? '—' : c === 'accuracy' ? `${Math.round(r[c])}%` : c !== 'win' ? r[c] : r[c] === 1 ? '100%' : r[c] === 0 ? '0%' : pctText(r[c]))
+const ACC_TITLE = 'Accuracy: how close the final picks came, weighted by points. A cover or push is 100%, and a miss loses about 7% a point, down to 0% at 14 (the LOY counts as 20 points here). An app stat, not a league one.'
 const WIN_TITLE = 'Chance to finish first this week among the players here (record breaks a tie). Games on now play out at their cover odds; picks on games that haven’t started are still hidden, so those count as coin flips.'
 const sortKey = ref(null)
 const sortDir = ref(-1)
@@ -136,9 +140,7 @@ const behind = r => seasonRows.value[0].total - r.total
       <header class="lg-head">
         <div class="lg-title">
           <h2>Week {{ week }}</h2>
-          <span v-if="statusText" :class="['lg-status', { live: isLive, final: weekOver }]">
-            <i v-if="isLive" class="ldot"></i>{{ statusText }}
-          </span>
+          <span v-if="statusText" :class="['lg-status', { final: weekOver }]">{{ statusText }}</span>
         </div>
         <div class="stepper" aria-label="Choose week">
           <button :disabled="week <= 1" aria-label="Previous week" @click="week--">‹</button>
@@ -151,7 +153,7 @@ const behind = r => seasonRows.value[0].total - r.total
       <div v-else-if="!started" class="prestart">
         <p class="pre-note">No games have kicked off yet. {{ rows.length }} of {{ rows.length + data.noPicks.length }} have picks in.</p>
         <ul class="inlist">
-          <li v-for="r in rows" :key="r.id" :class="{ me: r.me }" @click="emit('open', r.id)"><span class="ok">✓</span>{{ r.name }}</li>
+          <li v-for="r in rows" :key="r.id" :class="{ me: r.me }" @click="emit('open', r.id, week)"><span class="ok">✓</span>{{ r.name }}</li>
           <li v-for="n in data.noPicks" :key="n" class="missing"><span>·</span>{{ n }} <small>no picks yet</small></li>
         </ul>
       </div>
@@ -170,13 +172,13 @@ const behind = r => seasonRows.value[0].total - r.total
             <span role="columnheader">Player</span>
             <button v-for="c in cols" :key="c" type="button" role="columnheader" :aria-sort="ariaSort(c)"
                     :class="['num', 'sort', { on: key === c }]" @click="sortBy(c)">
-              <span :title="c === 'win' ? WIN_TITLE : null">{{ COLS[c] }}</span><i class="arr" :class="{ up: key === c && sortDir > 0 }"></i>
+              <span :title="c === 'win' ? WIN_TITLE : c === 'accuracy' ? ACC_TITLE : null">{{ COLS[c] }}</span><i class="arr" :class="{ up: key === c && sortDir > 0 }"></i>
             </button>
           </div>
           <button
             v-for="r in sorted" :key="r.id" type="button" role="row"
             :class="['tr', { me: r.me, first: rankOf(r) === 1 }]"
-            @click="emit('open', r.id)"
+            @click="emit('open', r.id, week)"
           >
             <span class="rank">
               {{ rankOf(r) }}
@@ -193,7 +195,7 @@ const behind = r => seasonRows.value[0].total - r.total
                 <template v-if="r.penalties"> · <span class="neg">−{{ r.penalties }}</span></template>
               </small>
             </span>
-            <span v-for="c in cols" :key="c" :class="['num', 'val', { on: key === c, neg: c !== 'win' && r[c] < 0, out: c === 'win' && r.win === 0 }]">{{ cell(r, c) }}</span>
+            <span v-for="c in cols" :key="c" :class="['num', 'val', { pct: c === 'accuracy', on: key === c, neg: c !== 'win' && r[c] < 0, out: c === 'win' && r.win === 0 }]">{{ cell(r, c) }}</span>
           </button>
           <p v-if="data.noPicks.length" class="nopicks">No picks: {{ data.noPicks.join(', ') }}</p>
         </div>
@@ -225,6 +227,7 @@ const behind = r => seasonRows.value[0].total - r.total
             <span role="columnheader">Player</span>
             <span role="columnheader" class="num">Total</span>
             <span role="columnheader" class="num avg">Avg</span>
+            <span role="columnheader" class="num acc" :title="ACC_TITLE">Acc</span>
             <span role="columnheader" class="num wins" title="Weeks won (finished weeks)">Wins</span>
           </div>
           <button v-for="r in seasonRows" :key="r.id" type="button" role="row" :class="['tr', { me: r.me, first: r.rank === 1 }]" @click="emit('open', r.id)">
@@ -247,6 +250,7 @@ const behind = r => seasonRows.value[0].total - r.total
               <small v-else-if="behind(r)" class="back" :title="`${behind(r)} behind the leader`">−{{ behind(r) }}</small>
             </span>
             <span class="num avg">{{ r.average }}</span>
+            <span class="num acc pct">{{ r.accuracy == null ? '—' : `${Math.round(r.accuracy)}%` }}</span>
             <span class="num wins">{{ r.weeklyWins || '—' }}</span>
           </button>
         </div>
@@ -259,89 +263,89 @@ const behind = r => seasonRows.value[0].total - r.total
 .standings { display: flex; flex-direction: column; gap: 16px; }
 
 /* one card per section: title, three highlight numbers, then the table */
-.lg { background: #fff; border-radius: 18px; box-shadow: 0 1px 2px #0000000d, 0 4px 14px #0000000a; overflow: hidden; }
+.lg { background: var(--card); border-radius: 18px; box-shadow: 0 1px 2px #0000000d, 0 4px 14px #0000000a; overflow: hidden; }
 .lg-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 14px 12px 18px; }
 .lg-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
-.lg-title h2 { margin: 0; font-size: 1.25rem; font-weight: 800; letter-spacing: -.02em; color: #0f172a; text-transform: none; }
-.lg-status { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 999px; background: #f1f5f9; color: #475569; font-size: .7rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.lg-status.live { background: #fee2e2; color: #b91c1c; }
-.lg-status.final { background: #0f172a; color: #fff; text-transform: uppercase; letter-spacing: .05em; }
-.stepper { display: inline-flex; flex: none; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
-.stepper button { width: 38px; height: 36px; border: 0; background: #fff; font-size: 1.3rem; cursor: pointer; color: #0f172a; }
-.stepper button + button { border-left: 1px solid #e2e8f0; }
-.stepper button:hover:not(:disabled) { background: #f1f5f9; }
-.stepper button:disabled { color: #cbd5e1; cursor: default; }
+.lg-title h2 { margin: 0; font-size: 1.25rem; font-weight: 800; letter-spacing: -.02em; color: var(--text); text-transform: none; }
+.lg-status { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 999px; background: var(--soft); color: var(--text-2); font-size: .7rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lg-status.final { background: var(--ink); color: var(--on-ink); text-transform: uppercase; letter-spacing: .05em; }
+.stepper { display: inline-flex; flex: none; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.stepper button { width: 38px; height: 36px; border: 0; background: var(--card); font-size: 1.3rem; cursor: pointer; color: var(--text); }
+.stepper button + button { border-left: 1px solid var(--line); }
+.stepper button:hover:not(:disabled) { background: var(--soft); }
+.stepper button:disabled { color: var(--faintest); cursor: default; }
 
-.tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 12px 14px; background: #fbfcfe; border-top: 1px solid #f1f5f9; }
-.tile { min-width: 0; background: #fff; border: 1px solid #eef2f7; border-radius: 14px; padding: 9px 11px; display: flex; flex-direction: column; gap: 3px; }
-.tile.me { border-color: #bfdbfe; background: #f5f9ff; }
-.tile dt { font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: #94a3b8; }
-.tile dd { margin: 0; font-size: 1.35rem; font-weight: 800; line-height: 1.1; letter-spacing: -.02em; color: #0f172a; font-variant-numeric: tabular-nums; }
-.tile-sub { font-size: .74rem; font-weight: 600; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 12px 14px; background: var(--card-2); border-top: 1px solid var(--line-soft); }
+.tile { min-width: 0; background: var(--card); border: 1px solid var(--line-soft); border-radius: 14px; padding: 9px 11px; display: flex; flex-direction: column; gap: 3px; }
+.tile.me { border-color: var(--blue-line); background: var(--blue-tint); }
+.tile dt { font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--faint); }
+.tile dd { margin: 0; font-size: 1.35rem; font-weight: 800; line-height: 1.1; letter-spacing: -.02em; color: var(--text); font-variant-numeric: tabular-nums; }
+.tile-sub { font-size: .74rem; font-weight: 600; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* table: # | player | one column per number (Score, Live, Max, Live max) */
-.table { border-top: 1px solid #f1f5f9; }
+.table { border-top: 1px solid var(--line-soft); }
 .tr {
   display: grid; grid-template-columns: 40px minmax(0, 1fr) repeat(var(--cols, 1), 62px); align-items: center; gap: 0 4px;
-  width: 100%; min-height: 56px; padding: 8px 14px 8px 12px; border: 0; border-top: 1px solid #f1f5f9; background: #fff; font: inherit; color: inherit; text-align: left;
+  width: 100%; min-height: 56px; padding: 8px 14px 8px 12px; border: 0; border-top: 1px solid var(--line-soft); background: var(--card); font: inherit; color: inherit; text-align: left;
 }
-.season .tr { grid-template-columns: 40px minmax(0, 1fr) 76px 56px 56px; }
-.th { min-height: 0; border-top: 0; background: #f8fafc; padding-top: 8px; padding-bottom: 8px; font-size: .62rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: #94a3b8; }
+.season .tr { grid-template-columns: 40px minmax(0, 1fr) 76px 56px 56px 56px; }
+.th { min-height: 0; border-top: 0; background: var(--card-2); padding-top: 8px; padding-bottom: 8px; font-size: .62rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); }
 .th .sort {
   align-self: stretch; border: 0; background: none; padding: 4px 0; margin: -4px 0; font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit;
   cursor: pointer; display: inline-flex; align-items: center; justify-content: flex-end; gap: 3px; line-height: 1.15; text-align: right;
 }
-.th .sort:hover { color: #475569; }
-.th .sort.on { color: #2563eb; }
+.th .sort:hover { color: var(--text-2); }
+.th .sort.on { color: var(--blue); }
 .th .sort:focus-visible { outline: 2px solid #93c5fd; border-radius: 4px; }
 .arr { width: 0; height: 0; border-left: 3.5px solid transparent; border-right: 3.5px solid transparent; border-top: 4px solid currentColor; opacity: 0; flex: none; }
 .sort.on .arr { opacity: 1; }
 .arr.up { transform: rotate(180deg); }
 button.tr { cursor: pointer; transition: background .12s; }
-button.tr:hover { background: #f8fafc; }
+button.tr:hover { background: var(--card-2); }
 button.tr:focus-visible { outline: 2px solid #93c5fd; outline-offset: -2px; }
-.tr.me { background: #eff6ff; box-shadow: inset 3px 0 0 #2563eb; }
-.tr.me:hover { background: #e0ecff; }
+.tr.me { background: var(--blue-tint); box-shadow: inset 3px 0 0 #2563eb; }
+.tr.me:hover { background: var(--blue-tint-2); }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
-.rank { font-weight: 800; font-size: 1rem; color: #64748b; display: flex; flex-direction: column; align-items: flex-start; line-height: 1.05; font-variant-numeric: tabular-nums; }
-.first .rank { color: #b45309; }
+.rank { font-weight: 800; font-size: 1rem; color: var(--muted); display: flex; flex-direction: column; align-items: flex-start; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.first .rank { color: var(--amber-ink); }
 .mv { font-style: normal; font-size: .6rem; font-weight: 800; }
-.mv.up { color: #15803d; } .mv.down { color: #b91c1c; }
+.mv.up { color: var(--pos); } .mv.down { color: var(--neg); }
 .who { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
 .who b { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.who small { font-size: .72rem; color: #94a3b8; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.who small { font-size: .72rem; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .crown { margin-left: 5px; }
-.lv { color: #b91c1c; font-weight: 700; }
-.val { font-size: 1rem; font-weight: 700; color: #94a3b8; }
-.val.on { font-size: 1.12rem; font-weight: 800; color: #0f172a; }
-.val.neg { color: #f87171; } .val.on.neg { color: #b91c1c; }
-.val.out { color: #cbd5e1; }
-.score { font-weight: 800; font-size: 1.1rem; color: #0f172a; }
+.lv { color: var(--neg); font-weight: 700; }
+.val { font-size: 1rem; font-weight: 700; color: var(--faint); }
+.val.on { font-size: 1.12rem; font-weight: 800; color: var(--text); }
+.val.neg { color: #f87171; } .val.on.neg { color: var(--neg); }
+.val.out { color: var(--faintest); }
+.score { font-weight: 800; font-size: 1.1rem; color: var(--text); }
 .season .score { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
 .season .score small { font-size: .7rem; display: inline-flex; align-items: center; gap: 4px; }
-.season .score small.back { color: #94a3b8; font-weight: 600; }
-.avg, .wins { color: #475569; font-weight: 700; }
-.pos { color: #15803d; }
-.neg { color: #b91c1c; }
-.season .score b.neg { color: #b91c1c; }
+.season .score small.back { color: var(--faint); font-weight: 600; }
+.avg, .acc, .wins { color: var(--text-2); font-weight: 700; }
+.pos { color: var(--pos); }
+.neg { color: var(--neg); }
+.season .score b.neg { color: var(--neg); }
 .mobile-only { display: none; }
-.nopicks { margin: 0; padding: 10px 14px; border-top: 1px solid #f1f5f9; font-size: .76rem; color: #94a3b8; }
+.nopicks { margin: 0; padding: 10px 14px; border-top: 1px solid var(--line-soft); font-size: .76rem; color: var(--faint); }
 
-.prestart { padding: 12px 14px 14px; border-top: 1px solid #f1f5f9; }
-.pre-note { margin: 0; font-size: .85rem; color: #64748b; }
+.prestart { padding: 12px 14px 14px; border-top: 1px solid var(--line-soft); }
+.pre-note { margin: 0; font-size: .85rem; color: var(--muted); }
 .inlist { list-style: none; padding: 0; margin: 10px 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
-.inlist li { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; background: #f8fafc; font-weight: 600; font-size: .88rem; cursor: pointer; }
-.inlist li.me { background: #eff6ff; }
-.inlist li.missing { color: #94a3b8; cursor: default; font-weight: 500; }
+.inlist li { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; background: var(--card-2); font-weight: 600; font-size: .88rem; cursor: pointer; }
+.inlist li.me { background: var(--blue-tint); }
+.inlist li.missing { color: var(--faint); cursor: default; font-weight: 500; }
 .inlist small { font-size: .7rem; }
-.ok { color: #16a34a; font-weight: 800; }
-.loading, .empty { margin: 0; color: #64748b; text-align: center; padding: 28px 10px; border-top: 1px solid #f1f5f9; }
-.err { color: #b91c1c; }
+.ok { color: var(--pos); font-weight: 800; }
+.loading, .empty { margin: 0; color: var(--muted); text-align: center; padding: 28px 10px; border-top: 1px solid var(--line-soft); }
+.err { color: var(--neg); }
 
 @media (max-width: 520px) {
   .tr { grid-template-columns: 26px minmax(0, 1fr) repeat(var(--cols, 1), 46px); padding: 8px 10px; gap: 0 3px; min-height: 52px; }
-  .season .tr { grid-template-columns: 26px minmax(0, 1fr) 64px 48px; }
+  .season .tr { grid-template-columns: 26px minmax(0, 1fr) 64px 48px 48px; }
   .season .avg { display: none; }
+  .pct, .val.on.pct { font-size: .82rem; }
   .mobile-only { display: inline; }
   .th { font-size: .56rem; letter-spacing: .03em; }
   .val { font-size: .92rem; } .val.on { font-size: 1rem; }

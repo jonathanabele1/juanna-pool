@@ -77,23 +77,23 @@ function save() {
 
 <style scoped>
 .overlay { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px; background: #0f172a8c; backdrop-filter: blur(3px); }
-.dialog { width: min(440px, 100%); max-height: calc(100dvh - 32px); overflow-y: auto; background: #fff; border-radius: 20px; padding: 18px; box-shadow: 0 20px 60px #0006; display: flex; flex-direction: column; gap: 12px; }
+.dialog { width: min(440px, 100%); max-height: calc(100dvh - 32px); overflow-y: auto; background: var(--card); border-radius: 20px; padding: 18px; box-shadow: 0 20px 60px #0006; display: flex; flex-direction: column; gap: 12px; }
 header { display: flex; justify-content: space-between; align-items: center; }
 h3 { margin: 0; font-size: 1.05rem; }
-.x { border: 0; background: #f1f5f9; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; color: #475569; }
-.x:hover { background: #e2e8f0; }
-.sub { margin: 0; font-size: .85rem; color: #64748b; }
+.x { border: 0; background: var(--soft); width: 30px; height: 30px; border-radius: 50%; cursor: pointer; color: var(--text-2); }
+.x:hover { background: var(--chip); }
+.sub { margin: 0; font-size: .85rem; color: var(--muted); }
 .apps { display: flex; flex-direction: column; gap: 8px; }
-.app { display: flex; align-items: center; gap: 10px; padding: 12px; border: 1.5px solid #e2e8f0; border-radius: 14px; cursor: pointer; }
-.app.on { border-color: #2563eb; background: #eff6ff; }
-.app input { width: 18px; height: 18px; accent-color: #2563eb; margin: 0; }
+.app { display: flex; align-items: center; gap: 10px; padding: 12px; border: 1.5px solid var(--line); border-radius: 14px; cursor: pointer; }
+.app.on { border-color: #2563eb; background: var(--blue-tint); }
+.app input { width: 18px; height: 18px; accent-color: var(--blue); margin: 0; }
 .app span { display: flex; flex-direction: column; gap: 1px; }
-.app small { color: #64748b; font-size: .78rem; }
-.field { display: flex; flex-direction: column; gap: 4px; font-size: .78rem; font-weight: 600; color: #64748b; }
+.app small { color: var(--muted); font-size: .78rem; }
+.field { display: flex; flex-direction: column; gap: 4px; font-size: .78rem; font-weight: 600; color: var(--muted); }
 .field small { font-weight: 400; }
-.field input { padding: 10px 11px; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 1rem; color: #0f172a; }
-.note { margin: 0; font-size: .78rem; color: #94a3b8; }
-.err { margin: 0; font-size: .85rem; color: #b91c1c; }
-.ok { color: #15803d; margin-right: auto; align-self: center; }
+.field input { padding: 10px 11px; border: 1px solid var(--line); border-radius: 10px; font-size: 1rem; color: var(--text); }
+.note { margin: 0; font-size: .78rem; color: var(--faint); }
+.err { margin: 0; font-size: .85rem; color: var(--neg); }
+.ok { color: var(--pos); margin-right: auto; align-self: center; }
 footer { display: flex; justify-content: flex-end; gap: 8px; }
 </style>

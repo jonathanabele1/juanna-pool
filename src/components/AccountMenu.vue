@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { changePassword, logout } from '../api.js'
 import { MAIL_APPS } from '../mail.js'
 import { mailPrefs, loadMailPrefs } from '../mailPrefs.js'
+import { THEMES, theme } from '../theme.js'
 import MailSettingsDialog from './MailSettingsDialog.vue'
 
 defineProps({ user: Object, adminMode: Boolean, demoLive: Boolean })
@@ -55,6 +56,13 @@ async function doLogout() {
         <span>🧪 Test live mode<small>Fake scores, only you see them</small></span>
         <b :class="{ on: demoLive }">{{ demoLive ? 'On' : 'Off' }}</b>
       </button>
+      <div class="item theme">
+        <span>Theme</span>
+        <div class="seg3" role="radiogroup" aria-label="Appearance">
+          <button v-for="t in THEMES" :key="t.id" type="button" role="radio" :aria-checked="theme === t.id"
+                  :class="{ on: theme === t.id }" @click="theme = t.id">{{ t.label }}</button>
+        </div>
+      </div>
       <button class="item mail" @click="mailOpen = true; open = false">
         <span>✉ Email settings<small>Send picks with: {{ mailLabel() }}</small></span>
       </button>
@@ -74,25 +82,31 @@ async function doLogout() {
 
 <style scoped>
 .acct { position: relative; }
-.who { position: relative; width: 40px; height: 40px; display: grid; place-items: center; padding: 0; border: 1px solid #e2e8f0; border-radius: 50%; background: #fff; color: #334155; cursor: pointer; transition: background .15s, border-color .15s; }
-.who:hover, .who.on { background: #f1f5f9; border-color: #cbd5e1; }
+.who { position: relative; width: 40px; height: 40px; display: grid; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: var(--card); color: var(--text-2); cursor: pointer; transition: background .15s, border-color .15s; }
+.who:hover, .who.on { background: var(--soft); border-color: var(--line-strong); }
 .who:focus-visible { outline: 2px solid #93c5fd; outline-offset: 2px; }
 .who svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; }
-.admdot { position: absolute; top: 1px; right: 1px; width: 10px; height: 10px; border-radius: 50%; background: #0f172a; border: 2px solid #fff; }
-.ident { display: flex; flex-direction: column; gap: 1px; padding: 8px 10px 10px; margin-bottom: 4px; border-bottom: 1px solid #f1f5f9; min-width: 0; }
-.ident b { font-size: .95rem; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ident small { font-size: .74rem; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 40; width: min(260px, calc(100vw - 28px)); background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; box-shadow: 0 12px 30px #0f172a1f; padding: 6px; display: flex; flex-direction: column; }
-.item { text-align: left; border: 0; background: none; padding: 9px 10px; border-radius: 9px; cursor: pointer; color: #334155; }
-.item:hover { background: #f1f5f9; }
+.admdot { position: absolute; top: 1px; right: 1px; width: 10px; height: 10px; border-radius: 50%; background: var(--ink); border: 2px solid var(--card); }
+.ident { display: flex; flex-direction: column; gap: 1px; padding: 8px 10px 10px; margin-bottom: 4px; border-bottom: 1px solid var(--line-soft); min-width: 0; }
+.ident b { font-size: .95rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ident small { font-size: .74rem; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 40; width: min(260px, calc(100vw - 28px)); background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 12px 30px #0f172a1f; padding: 6px; display: flex; flex-direction: column; }
+.item { text-align: left; border: 0; background: none; padding: 9px 10px; border-radius: 9px; cursor: pointer; color: var(--text-2); }
+.item:hover { background: var(--soft); }
 .item.demo { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .item.demo span, .item.mail span { display: flex; flex-direction: column; }
-.item.demo small, .item.mail small { font-size: .72rem; color: #94a3b8; }
-.item.demo b { font-size: .7rem; padding: 2px 8px; border-radius: 99px; background: #f1f5f9; color: #64748b; }
-.item.demo b.on { background: #0f172a; color: #fff; }
+.item.demo small, .item.mail small { font-size: .72rem; color: var(--faint); }
+.item.demo b { font-size: .7rem; padding: 2px 8px; border-radius: 99px; background: var(--soft); color: var(--muted); }
+.item.demo b.on { background: var(--ink); color: var(--on-ink); }
 .item.demo + .item.demo b.on { background: #7c3aed; }
+.item.theme { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; cursor: default; }
+.item.theme:hover { background: none; }
+.seg3 { display: inline-flex; gap: 2px; padding: 2px; border-radius: 9px; background: var(--chip); }
+.seg3 button { border: 0; background: none; padding: 4px 8px; border-radius: 7px; font-size: .74rem; font-weight: 700; color: var(--muted); cursor: pointer; }
+.seg3 button.on { background: var(--raised); color: var(--text); box-shadow: 0 1px 2px #0000001f; }
+.seg3 button:focus-visible { outline: 2px solid #93c5fd; outline-offset: 1px; }
 .pw { display: flex; flex-direction: column; gap: 6px; padding: 4px 10px 10px; }
-.pw input { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 9px; }
-.ok { margin: 0; color: #15803d; font-size: .8rem; }
-.err { margin: 0; color: #b91c1c; font-size: .8rem; }
+.pw input { padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 9px; }
+.ok { margin: 0; color: var(--pos); font-size: .8rem; }
+.err { margin: 0; color: var(--neg); font-size: .8rem; }
 </style>

@@ -6,8 +6,10 @@ import TeamStats from './components/TeamStats.vue'
 const props = defineProps({
   userId: Number,   // whose season (omit: yours)
   mine: { type: Boolean, default: true },
+  player: Object,   // { displayName, teamName }: names whose season this is
   refresh: Number,  // bumps while games are live: reload quietly, keeping scroll and table state
 })
+const emit = defineEmits(['mine'])
 
 const s = ref(null)
 const error = ref('')
@@ -21,7 +23,9 @@ async function load(quiet) {
 watch(() => [props.userId, props.mine], () => load(false), { immediate: true })
 watch(() => props.refresh, () => load(true))
 const you = computed(() => (props.mine ? 'your' : 'their'))
+const initial = computed(() => (props.player?.displayName || '?').trim().charAt(0).toUpperCase())
 
+const ACC_TITLE = 'How close the final picks came, weighted by points. A cover or push is 100%, and a miss loses about 7% a point, down to 0% at 14 (the LOY counts as 20 points here). An app stat, not a league one.'
 const fmt = n => (n == null ? '—' : n)
 const sign = n => (n > 0 ? `+${n}` : n)
 
@@ -48,11 +52,19 @@ const cumulative = computed(() => {
 </script>
 
 <template>
+  <header v-if="player" :class="['owner', { other: !mine }]">
+    <span class="av" aria-hidden="true">{{ initial }}</span>
+    <span class="owner-txt">
+      <b>{{ player.displayName }}<small v-if="mine" class="you">You</small></b>
+      <small v-if="player.teamName">{{ player.teamName }}</small>
+    </span>
+    <button v-if="!mine" class="btn ghost sm" @click="emit('mine')">My stats</button>
+  </header>
   <p v-if="error" class="err">Couldn’t load stats: {{ error }}</p>
   <p v-else-if="!s" class="loading">Crunching {{ you }} season…</p>
   <p v-else-if="!s.weeksPlayed" class="empty">
     <template v-if="mine">No scored weeks yet. Save your picks for a week whose games have finished and your stats will show up here.</template>
-    <template v-else>No scored weeks yet for this player.</template>
+    <template v-else>No scored weeks yet for {{ player?.displayName || 'this player' }}.</template>
   </p>
 
   <div v-else class="stats">
@@ -60,6 +72,7 @@ const cumulative = computed(() => {
       <div><span class="k">Season total</span><span class="v">{{ s.total }}</span></div>
       <div><span class="k">Weekly average</span><span class="v">{{ s.average }}</span></div>
       <div><span class="k">Record vs spread</span><span class="v">{{ s.record.wins }}–{{ s.record.losses }}<template v-if="s.record.pushes">–{{ s.record.pushes }}</template></span><small>{{ fmt(s.record.pct) }}% covers</small></div>
+      <div v-if="s.accuracy != null" :title="ACC_TITLE"><span class="k">Accuracy</span><span class="v">{{ Math.round(s.accuracy) }}%</span><small>how close, by points</small></div>
       <div><span class="k">Weeks played</span><span class="v">{{ s.weeksPlayed }}</span></div>
     </section>
 
@@ -67,8 +80,8 @@ const cumulative = computed(() => {
       <h3>Score by week</h3>
       <div class="chartwrap">
         <svg :viewBox="`0 0 ${chart.W} ${chart.H}`" :width="chart.W" :height="chart.H" role="img" aria-label="Score by week">
-          <line :x1="0" :x2="chart.W" :y1="chart.zero" :y2="chart.zero" stroke="#cbd5e1" />
-          <line v-if="chart.avg != null" :x1="0" :x2="chart.W" :y1="chart.avg" :y2="chart.avg" stroke="#2563eb" stroke-dasharray="4 4" />
+          <line :x1="0" :x2="chart.W" :y1="chart.zero" :y2="chart.zero" style="stroke: var(--line-strong)" />
+          <line v-if="chart.avg != null" :x1="0" :x2="chart.W" :y1="chart.avg" :y2="chart.avg" style="stroke: var(--blue)" stroke-dasharray="4 4" />
           <g v-for="b in chart.bars" :key="b.week">
             <rect :x="b.x" :y="b.y" :width="b.w" :height="b.h" rx="5" :fill="b.score < 0 ? '#ef4444' : b.complete ? '#16a34a' : '#86efac'" />
             <text :x="b.x + b.w / 2" :y="b.score < 0 ? b.y + b.h + 12 : b.y - 5" text-anchor="middle" class="bv">{{ b.score }}</text>
@@ -131,31 +144,39 @@ const cumulative = computed(() => {
 </template>
 
 <style scoped>
+/* whose season: name and team name */
+.owner { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; min-width: 0; }
+.owner .av { flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--chip); color: var(--text-2); font-weight: 800; font-size: 1.05rem; }
+.owner.other .av { background: var(--blue); color: #fff; }
+.owner-txt { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 1px; }
+.owner-txt b { font-size: 1.2rem; font-weight: 800; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.owner-txt > small { font-size: .84rem; font-weight: 600; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.you { margin-left: 8px; padding: 2px 7px; border-radius: 99px; background: var(--chip); color: var(--text-2); font-size: .6rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; vertical-align: 3px; }
 .stats { display: flex; flex-direction: column; gap: 14px; }
 .hero { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
-.hero > div { background: #0f172a; color: #fff; border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; }
+.hero > div { background: var(--hero); color: #fff; border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; }
 .hero .k { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: #94a3b8; }
 .hero .v { font-size: 2rem; font-weight: 800; letter-spacing: -.02em; }
 .hero small { color: #94a3b8; }
-.card { background: #fff; border-radius: 16px; padding: 14px 16px; box-shadow: 0 1px 2px #0000000d; }
+.card { background: var(--card); border-radius: 16px; padding: 14px 16px; box-shadow: 0 1px 2px #0000000d; }
 .card h3 { margin: 0 0 10px; font-size: .95rem; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
 .chartwrap { overflow-x: auto; }
-.bv { font-size: 11px; font-weight: 700; fill: #334155; }
-.bl { font-size: 10px; fill: #94a3b8; }
-.note { font-size: .75rem; color: #94a3b8; margin: 8px 0 0; }
+.bv { font-size: 11px; font-weight: 700; fill: var(--text-2); }
+.bl { font-size: 10px; fill: var(--faint); }
+.note { font-size: .75rem; color: var(--faint); margin: 8px 0 0; }
 .kv { list-style: none; margin: 0; padding: 0; }
-.kv li { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid #f1f5f9; font-size: .88rem; }
+.kv li { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--line-soft); font-size: .88rem; }
 .kv li:first-child { border-top: 0; }
-.kv span { color: #64748b; }
-.kv small { color: #94a3b8; font-weight: 500; }
-.neg { color: #b91c1c !important; }
+.kv span { color: var(--muted); }
+.kv small { color: var(--faint); font-weight: 500; }
+.neg { color: var(--neg) !important; }
 .bar { display: grid; grid-template-columns: 90px 1fr 110px; align-items: center; gap: 8px; margin: 7px 0; font-size: .82rem; }
-.bl2 { color: #475569; font-weight: 600; }
-.track2 { height: 10px; background: #f1f5f9; border-radius: 99px; overflow: hidden; }
+.bl2 { color: var(--text-2); font-weight: 600; }
+.track2 { height: 10px; background: var(--soft); border-radius: 99px; overflow: hidden; }
 .fill2 { display: block; height: 100%; background: #16a34a; border-radius: 99px; }
 .fill2.alt { background: #2563eb; }
-.bv2 { text-align: right; color: #334155; font-variant-numeric: tabular-nums; }
-.loading, .empty { color: #64748b; text-align: center; padding: 40px 10px; }
-.err { color: #b91c1c; }
+.bv2 { text-align: right; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.loading, .empty { color: var(--muted); text-align: center; padding: 40px 10px; }
+.err { color: var(--neg); }
 </style>

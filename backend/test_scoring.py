@@ -84,6 +84,26 @@ class Scoring(unittest.TestCase):
         self.assertEqual(st["loy"]["outcome"], "loss")
         self.assertEqual(st["byTier"][2]["wins"], 1)
 
+    def test_accuracy(self):
+        w = {"week": 1, "adjustment": 0, "games": [
+            game("1", "BUF", 6.5, "fav", 10),   # covered by half a point -> 100
+            game("1", "BUF", 7, "fav", 5),      # push -> 100
+            game("2", "GB", 3, "fav", 20),      # missed by 24 -> 0
+            game("1", "BUF", 14, "fav", 4),     # missed by 7 -> 50
+            game("1", "BUF", 6.5, "dog", 2),    # missed by half a point -> 96.4
+            game("3", "X", 3, "fav", 2),        # pending: not rated
+        ]}
+        s = score_week(w, RES)
+        self.assertEqual([g.get("accuracy") for g in s["games"]], [100, 100, 0, 50, 100 - 100 * .5 / 14, None])
+        self.assertEqual(s["accuracy"], round((10 * 100 + 5 * 100 + 20 * 0 + 4 * 50 + 2 * (100 - 100 * .5 / 14)) / 41, 1))
+        st = season_stats([(1, s)])
+        self.assertEqual((st["accuracy"], st["byWeek"][0]["accuracy"]), (s["accuracy"], s["accuracy"]))
+
+    def test_accuracy_loy_counts_as_20(self):
+        w = {"week": 1, "adjustment": 0, "games": [game("2", "GB", 3, "fav", 50), game("1", "BUF", 6.5, "fav", 20)]}
+        self.assertEqual(score_week(w, RES)["accuracy"], 50)
+        self.assertIsNone(score_week({"week": 1, "games": [game("3", "X", 3, "fav", 5)]}, RES)["accuracy"])
+
 
 class Teams(unittest.TestCase):
     def test_team_stats(self):

@@ -3,7 +3,8 @@
 ## Weeks and persistence
 - Everything is stored in one SQLite file, **`backend/data/pool.db`** (`/data/pool.db` on Railway): accounts, each
   week's lines and sheet image, and every player's picks. See [deploy.md](deploy.md) for accounts and backups.
-- The week bar (1–18) switches weeks. Saved weeks show their score; the current NFL week is marked "now".
+- The week bar (1–18) switches weeks. Saved weeks show their score; the current NFL week is marked "now". The
+  selected week always sits in the middle of the strip (weeks 1 and 18 too); ← / → step through weeks when it has focus.
 - **Save** stores your picks for the week. Only games with a team picked are saved.
 - Re-uploading an image replaces the matchups but keeps your pick/points for any matchup that still exists.
 - "Clear my picks" removes your saved picks for that week (not allowed once any of its deadlines have passed).
@@ -34,7 +35,10 @@
 - The email has your **saved** picks only, in sheet order with the sheet's team names, under "Week N." and your
   team name. Picks on games that already kicked off are left out (they went in an earlier email, e.g. Thursday's)
   and the header becomes "Rest of week N.", unless every pick has kicked off.
-- The first tap asks how to send: Gmail, Outlook or Mail app, plus your team name. It's saved on the account, and
+- Send picks first shows a confirmation: picks made (e.g. 14/14), points used (e.g. 100/100), the league address, the
+  email app and a preview of the email, with a note for anything off (games without a pick, points left or over, 4
+  double-digit picks, no league address). Its button opens the email.
+- The first send asks how to send: Gmail, Outlook or Mail app, plus your team name. It's saved on the account, and
   **account menu → Email settings** changes it later.
   - Phones: the Gmail or Outlook app opens. If it isn't installed, the website opens instead.
   - Desktop: Gmail or outlook.com opens in a new tab. An optional Gmail address picks the right account when
@@ -48,59 +52,57 @@
 - No penalties are applied automatically. Any penalty (over 100, four double-digits, skipped games, late picks, out-of-order, etc.) is entered by hand in the week's **Adjustment** field on the Admin page.
 - Final results are cached in the database, so past weeks still score if ESPN is unreachable.
 
-## Cover odds
-- The chance a pick covers the **sheet** spread, from the score, the clock, who has the ball and where
-  (`backend/cover.py`). Shown only where it says something:
-  - **Live game card**: on the right of the down-and-distance box ("41% to cover", plus the push chance when it's 5%
-    or more). Green at 70%+, red at 30% or less.
-  - **Before kickoff**: only when DraftKings' line has moved off the sheet's (otherwise it's a coin flip). The
-    DraftKings pill adds your side's chance, or the side the move helps if you haven't picked ("KC 46%").
-  - **League → Week**: a *Win %* column while the week is still being decided (see below).
-  - The pill popover on the week card and the desktop grid tiles show the same chance.
-- The week (`GET /api/weeks/{n}`) carries `odds: {eventId: {fav, push}}`, the favorite's chance per game, so the
-  number follows your pick while you edit. Each scored pick also gets `odds: {cover, push}`.
+## Cover odds and Win %
+How both are worked out, how well they hold up, and how to rebuild the data: [odds.md](odds.md).
+- **Cover odds**: the chance a pick covers the sheet spread. Shown on a live game card ("41% to cover"), on the
+  DraftKings pill before kickoff when the line has moved ("KC 46%"), in the week card's pill popover and on grid
+  tiles. Nothing shows when it's a coin flip.
+- **Win %**: League → Week, each player's chance to finish first this week among the players here. Picks on games
+  that haven't kicked off stay hidden and aren't used.
 
-## Win % (League → Week)
-- Each player's chance to finish first this week among the players in the app (not the whole Juanna pool). Record
-  breaks a tie, then it's split, like the weekly prize.
-- `backend/winchance.py` plays the rest of the week out 3,000 times. A game on now ends by its cover odds, and every
-  pick on it pays off from that same result.
-- **Hidden picks stay hidden.** On games that haven't kicked off, nobody's actual picks are used. Otherwise saving
-  different picks and watching your Win % move would give away a friend's side. Each player's points on those games
-  (the total Max already shows) are spread evenly over them, each a coin flip. A pick counts exactly once its game
-  kicks off.
-- It only says 0% or 100% when it's settled: Max can't reach the leader's score, or no one's Max can reach yours.
-  Otherwise a long shot shows as <1%.
-- On phones, Win % takes Live max's place (five number columns don't fit). Desktop shows both.
-- The odds come from `backend/cover_table.json`: how NFL margins actually moved over the rest of a game from each spot,
-  2012–2025 play-by-play (nflverse), so 3s and 7s, kneel-downs and pushes come out right. Rebuild it with
-  `scripts/build_cover_table.py`, which also scores it on held-out seasons.
-- The market line is saved for each game before kickoff (ESPN drops it once a game starts) and is treated as an even
-  bet. So before kickoff, a sheet line that matches the market is 50%, and the odds move off 50% only when the market
-  has moved since the sheet (e.g. −2.5 on the sheet with the market at −3 ≈ 54%). With no saved line, the sheet stands in.
-- It's an estimate. On 2024–25 games it was within about 2 points of what actually happened at every level of confidence.
+## Accuracy
+An app stat, not a league rule: how close each player's final picks came, so a near miss counts for more than a
+blowout. `backend/scoring.py` (`pick_accuracy`, `accuracy`).
+- Each decided pick: a cover or push is **100%**, a miss loses 100/14 (~7%) per point it missed by, down to
+  **0%** at 14 or more (missed by 1: 93%, by 7: 50%).
+- Week and season accuracy are the average over decided picks, **weighted by points** (a 20 counts ten times a 2).
+  The LOY's 50 counts as 20. Season accuracy runs over every pick of the season, not an average of the weeks.
+- Shown in League → Week (*Acc* column, hidden on phones while games are on), the Season table, and a tile on
+  Season stats.
+- Picks → week card: an **Accuracy** tile beside Score, Record and Max once a game is final ("Details ›"). Tapping it
+  opens how it's scored and each final pick's result and accuracy, biggest points first
+  (`src/components/AccuracyDialog.vue`). With four tiles, phones show them 2×2.
 
 ## Season stats
-Total, weekly average, record vs spread, best/worst week, points earned vs wagered, cover rate by confidence tier,
+Total, weekly average, accuracy, record vs spread, best/worst week, points earned vs wagered, cover rate by confidence tier,
 favorite/underdog and home/away tendencies, Lock of the Year result, biggest hit/miss, running total.
 
 ## The rest of the pool
 - **League** tab (third, after Season stats). One page: the week on top (‹ › to change weeks), the season below.
   Each section opens with three highlights: week leader/winner, your place, pool average; season leader (and lead),
   your place (and points back), best single week. *Week*: every player's score for the week, with a column each for Score, Live
-  (if every game on now ended as it stands), Max and Live max (columns show only when they apply). Tap a header to sort
+  (if every game on now ended as it stands), Win % (chance to win the week, see [odds.md](odds.md)), Max and Live max
+  (columns show only when they apply; on phones Win % takes Live max's place). Tap a header to sort
   by it, tap again to flip. While games are live it sorts by Live by default (with ▲/▼ for places gained or lost vs.
   the final games only) and refreshes every 30s.
   *Season*: total (with points behind the leader), average, record, weeks won (finished weeks only), and ▲/▼ for
-  places moved since the week before the latest one with results. Tap a player to open their page.
-- A player's page shows their picks week by week (read-only) and their season stats. **Another player's pick on a
-  game stays hidden until that game kicks off**: the server never sends it, admins included.
-- Season stats has a "Viewing" picker to look at anyone's season.
+  places moved since the week before the latest one with results. Tap a player to view them: it switches to them and
+  opens Picks (on that week, from the week table).
+- **Viewing switcher** (the pill next to the account icon, "You ▾"): picks whose Picks and Season stats tabs you see.
+  The menu lists you first, then everyone else with their team name. While viewing someone else the pill turns blue,
+  Picks shows their week read-only (with their own week bar scores) and Season stats shows their season. "My picks"
+  / "My stats" (or picking yourself in the menu) goes back. Your own picks stay loaded underneath, so unsaved edits
+  survive a look at someone else. **Another player's pick on a game stays hidden until that game kicks off**: the
+  server never sends it, admins included.
+- **Team names** (set in Email settings) show above the week card's title and under the name on Season stats.
 - Once a game kicks off, its card shows the pool's split (% and count per side, and whether you're with the
   pool). **Details** lists every player's pick, points and result for that game.
 - **Public betting**: DraftKings' published betting splits (% of bets and % of money on each side of the spread),
   scraped from DK Network every 10 minutes before kickoff. The last split seen before kickoff is kept in the
   `splits` table, so it still shows afterward. If DraftKings can't be reached, the row just doesn't show.
+
+## Appearance
+- Account menu → **Theme**: Light, Dark or Auto (follows the device; the default). Kept per browser.
 
 ## Test live mode (admins)
 - Account menu → **🧪 Test live mode** (shown in admin mode). A purple banner shows while it's on; "Turn off" ends it.

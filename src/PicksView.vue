@@ -11,7 +11,9 @@ import GameRow from './components/GameRow.vue'
 import GameTile from './components/GameTile.vue'
 import UploadDialog from './components/UploadDialog.vue'
 import MailSettingsDialog from './components/MailSettingsDialog.vue'
+import SendPicksDialog from './components/SendPicksDialog.vue'
 import ScheduleList from './components/ScheduleList.vue'
+import AccuracyDialog from './components/AccuracyDialog.vue'
 import { gamesFromEvents, groupByKickoff } from './schedule.js'
 import { SAMPLE } from './sample.js'
 
@@ -359,9 +361,17 @@ const message = () => ({
 function launchMail() {
   mailNote.value = openMail(mailPrefs.app, message(), os) ? '' : 'Your browser blocked the new tab. Allow pop-ups for this site, then try again.'
 }
-function sendPicks() {
-  if (mailApp.value) launchMail()
+// Send picks asks first (picks made, points used, where it's going); its button opens the email
+const confirmSend = ref(false)
+function sendPicks() { confirmSend.value = true }
+function confirmed() {
+  confirmSend.value = false
+  if (mailApp.value) launchMail()   // straight from the tap, or the new tab gets blocked
   else mailOpen.value = true
+}
+function changeApp() {
+  confirmSend.value = false
+  mailOpen.value = true
 }
 function mailChosen() {
   mailOpen.value = false
@@ -415,6 +425,23 @@ async function save() {
 }
 const OUTCOME_TEXT = { win: 'covered', loss: 'missed', push: 'push', pending: 'not played yet', skipped: 'no pick', open: 'no pick yet' }
 const LIVE_TEXT = { win: 'live, covering', loss: 'live, not covering', push: 'live, on the number' }
+// ---- accuracy: the tile opens a breakdown of every final pick ----
+const accOpen = ref(false)
+const half = n => String(n).replace('.5', '½')
+const accRows = computed(() => (scored.value?.games || []).flatMap((res, i) => {
+  const g = serverCopy.value?.games?.[i]
+  if (!g?.pick || res?.accuracy == null) return []
+  const r = resolveGame(g, events.value), t = g.pick === 'fav' ? r.favTeam : r.dogTeam
+  const mine = g.pick === 'fav' ? res.margin : -res.margin
+  const pts = Number(g.points) || 0
+  return [{
+    key: i, abbr: t?.abbr || (g[`${g.pick}Abbr`] || g[g.pick] || '').toUpperCase(), logo: t?.logo, pts,
+    weight: Math.min(pts, 20),   // the lock counts as 20, as on the server
+    how: mine > 0 ? `Covered by ${half(mine)}` : mine < 0 ? `Missed by ${half(-mine)}` : 'Push',
+    acc: res.accuracy,
+  }]
+}))
+
 const tally = computed(() => {
   const t = { win: 0, loss: 0, push: 0, pending: 0, liveWin: 0, liveLoss: 0 }
   for (const x of rowInfo.value) {
@@ -545,6 +572,7 @@ const adjText = computed(() => [
     <section class="weekhead">
       <div class="wh-top">
         <div class="wh-id">
+          <p v-if="mailPrefs.teamName" class="wh-who">{{ mailPrefs.teamName }}</p>
           <div class="wh-title">
             <h2>Week {{ week }}</h2>
           </div>
@@ -586,7 +614,13 @@ const adjText = computed(() => [
               <i class="ldot"></i>Live {{ scored.liveMax }}
             </span>
           </div>
-          <div v-else-if="!hasResults" :class="['stat', 'used', state]">
+          <div v-if="scored?.accuracy != null" class="stat tap" role="button" tabindex="0" aria-haspopup="dialog"
+               :aria-label="`Accuracy ${Math.round(scored.accuracy)}%. Show how it's worked out`"
+               @click="accOpen = true" @keydown.enter.prevent="accOpen = true" @keydown.space.prevent="accOpen = true">
+            <dt>Accuracy</dt><dd>{{ Math.round(scored.accuracy) }}%</dd>
+            <span class="stat-more">Details<svg viewBox="0 0 8 12" aria-hidden="true"><path d="M2 2l4 4-4 4" /></svg></span>
+          </div>
+          <div v-if="!hasResults" :class="['stat', 'used', state]">
             <dt>Points used</dt><dd>{{ total }}<small> / {{ TARGET }}</small></dd>
             <span class="stat-sub">{{ state === 'good' ? '✓ all in' : diff > 0 ? `${diff} left` : `${-diff} over` }}</span>
           </div>
@@ -785,6 +819,11 @@ const adjText = computed(() => [
       </footer>
     </template>
 
+    <AccuracyDialog v-if="accOpen && scored?.accuracy != null" :week="week" :pct="scored.accuracy" :rows="accRows"
+                    :pending="card.pending" @close="accOpen = false" />
+    <SendPicksDialog v-if="confirmSend" :week="week" :game-count="games.length" :saved="savedPicks" :out="outGames"
+                     :to="leagueEmail" :app-label="mailApp?.label || ''" :body="output"
+                     @close="confirmSend = false" @send="confirmed" @change="changeApp" />
     <MailSettingsDialog v-if="mailOpen" sending @close="mailOpen = false" @saved="mailChosen" />
     <UploadDialog
       v-if="uploadOpen && isAdmin"
