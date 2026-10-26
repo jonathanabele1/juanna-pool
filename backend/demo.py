@@ -4,7 +4,7 @@ An admin's browser sends `X-Demo-Live: 1`; for that request only, the scoreboard
 final, ~30% live (moving along every 30s: a live game runs Q1 to the 4th quarter in 30 minutes, then starts over)
 and the rest not started. Nothing fake is ever saved or shown to anyone else.
 
-Other players' picks on games that haven't *really* kicked off are swapped for made-up picks while the mode is on,
+Other players' picks on games that haven't *really* kicked off (before Sunday 1:00 PM ET) are swapped for made-up picks while the mode is on,
 so it can't be used to peek at hidden picks.
 """
 import copy
@@ -12,7 +12,10 @@ import hashlib
 import random
 import time
 from contextvars import ContextVar
+from datetime import datetime, timezone
 from http.cookies import SimpleCookie
+
+from .deadlines import reveal_at
 
 HEADER = b"x-demo-live"
 CYCLE = 30 * 60
@@ -98,6 +101,9 @@ def picks(user_id: int, stored: dict, real_results: dict[str, dict]) -> dict:
     """Someone else's picks, with a made-up pick on every game that hasn't really kicked off."""
     if not active() or user_id == viewer.get():
         return stored
+    at = reveal_at((real_results.get(k[3:]) or {}).get("kickoff") for k in stored if k.startswith("ev:"))
+    if at and at <= datetime.now(timezone.utc):
+        return stored  # Sunday 1 PM ET has really passed: every pick shows anyway
     out = {}
     for key, pick in stored.items():
         res = real_results.get(key[3:]) if key.startswith("ev:") else None

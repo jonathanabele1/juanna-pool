@@ -151,7 +151,9 @@ h2 small { text-transform: none; letter-spacing: 0; font-weight: 600; margin-lef
 .wh-id { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 220px; }
 .wh-who { margin: 0 0 -2px; font-size: .78rem; font-weight: 600; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wh-who b { color: var(--text-2); font-weight: 800; }
-.wh-title { display: flex; align-items: center; gap: 2px; }
+.wh-title { display: flex; align-items: center; gap: 2px 10px; flex-wrap: wrap; }
+/* games on now: one "Live" next to the week title stands for every red live number on the card */
+.wh-live { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 999px; background: var(--red-tint); color: var(--neg); font-size: .7rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
 .wh-title h2 { margin: 0; font-size: 1.35rem; font-weight: 800; text-transform: none; letter-spacing: -.02em; color: var(--text); }
 .wh-sub { margin: 0; font-size: .82rem; color: var(--muted); }
 .wh-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -240,8 +242,9 @@ h2 small { text-transform: none; letter-spacing: 0; font-weight: 600; margin-lef
 .stat.tap:hover { border-color: var(--blue-line); background: var(--blue-tint); }
 .stat.tap:active { transform: scale(.97); }
 .stat.tap:focus-visible { outline: 2px solid #93c5fd; outline-offset: 1px; }
-.stat-more { display: inline-flex; align-items: center; gap: 4px; font-size: .72rem; font-weight: 700; color: var(--blue); }
-.stat-more svg { width: 6px; height: 9px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+/* the chevron in a tappable tile's label corner says it opens more */
+.stat.tap dt { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.stat-go { flex: none; width: 6px; height: 10px; fill: none; stroke: var(--blue); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .ldot { width: 7px; height: 7px; border-radius: 50%; background: #dc2626; display: inline-block; animation: livebar 1.4s ease-in-out infinite; }
 .livenote { display: inline-flex; align-items: center; gap: 6px; color: var(--neg); font-weight: 700; }
 @media (prefers-reduced-motion: reduce) { .wh-strip .seg, .ldot { animation: none !important; } }

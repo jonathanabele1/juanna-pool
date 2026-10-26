@@ -47,7 +47,7 @@ const pubTitle = computed(() => (pub.value
     </button>
     <div v-else-if="pool" class="ln muted">
       <span class="lbl">Pool</span>
-      <span class="wait"><span aria-hidden="true">🔒</span> Locked until kickoff</span>
+      <span class="wait"><span aria-hidden="true">🔒</span> Locked until kickoff or Sun 1 PM</span>
     </div>
 
     <div v-if="pub" class="ln" :title="pubTitle">

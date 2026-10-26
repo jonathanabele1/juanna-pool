@@ -57,5 +57,16 @@ def deadline_for(game: dict, info: dict) -> str | None:
     return info["byEvent"].get(str(game.get("eventId") or "")) or info["fallback"]
 
 
+# Sunday 1:00 PM ET: every pick for the weekend is in (the league's Sunday deadline), so from then on everyone's picks
+# show, not just those on games that have kicked off.
+REVEAL = time(13)
+
+
+def reveal_at(kickoffs) -> datetime | None:
+    """When every pick of the week shows: 1:00 PM ET on the week's Sunday (None when no Sunday game is known)."""
+    sundays = [et.date() for et in (_parse(k).astimezone(ET) for k in kickoffs if k) if et.weekday() == 6]
+    return datetime.combine(min(sundays), REVEAL, ET).astimezone(timezone.utc) if sundays else None
+
+
 def is_past(deadline: str | None, now: datetime | None = None) -> bool:
     return bool(deadline) and _parse(deadline) <= (now or datetime.now(timezone.utc))

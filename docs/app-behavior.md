@@ -67,18 +67,25 @@ blowout. `backend/scoring.py` (`pick_accuracy`, `accuracy`).
   **0%** at 14 or more (missed by 1: 93%, by 7: 50%).
 - Week and season accuracy are the average over decided picks, **weighted by points** (a 20 counts ten times a 2).
   The LOY's 50 counts as 20. Season accuracy runs over every pick of the season, not an average of the weeks.
-- Shown in League → Week (*Acc* column, hidden on phones while games are on), the Season table, and a tile on
+- Shown in League → Week (*Acc* column, sortable, phones included), the Season table, and a tile on
   Season stats.
-- Picks → week card: an **Accuracy** tile beside Score, Record and Max once a game is final ("Details ›"). Tapping it
-  opens how it's scored and each final pick's result and accuracy, biggest points first
-  (`src/components/AccuracyDialog.vue`). With four tiles, phones show them 2×2.
+- Picks → week card (yours or another player's): an **Accuracy** tile beside Score, Record and Max once a game is
+  final or on (a › in its label corner says it opens). While games are on, a red second number is the **live
+  accuracy**: the picks on now rated as they stand, with the final ones (`liveAccuracy` in the week score). Tapping it
+  opens each rated pick's result and accuracy, biggest points first, live picks in red ("Covering by 3", "Down 2½")
+  (`src/components/AccuracyDialog.vue`). Its header (week, %, live %, close) stays pinned while the picks scroll; the
+  book button shows how it's scored; a tap outside closes it. With four tiles, phones show them 2×2.
+- Live numbers on the week card (score, record, max, accuracy) are the red second number in each tile. A single
+  "● Live" badge next to the week title stands for all of them.
 
 ## Season stats
 Total, weekly average, accuracy, record vs spread, best/worst week, points earned vs wagered, cover rate by confidence tier,
 favorite/underdog and home/away tendencies, Lock of the Year result, biggest hit/miss, running total.
 
 ## The rest of the pool
-- **League** tab (third, after Season stats). One page: the week on top (‹ › to change weeks), the season below.
+- **League** tab (third, after Season stats). One page: the week strip on top (the same as the Picks tab: tap a
+  week or swipe along it, your score under each), the week, then the season through that week (an earlier week shows
+  the season table as it stood then, ▲/▼ included; `GET /api/standings/season?through=N`).
   Each section opens with three highlights: week leader/winner, your place, pool average; season leader (and lead),
   your place (and points back), best single week. *Week*: every player's score for the week, with a column each for Score, Live
   (if every game on now ended as it stands), Win % (chance to win the week, see [odds.md](odds.md)), Max and Live max
@@ -92,10 +99,19 @@ favorite/underdog and home/away tendencies, Lock of the Year result, biggest hit
   The menu lists you first, then everyone else with their team name. While viewing someone else the pill turns blue,
   Picks shows their week read-only (with their own week bar scores) and Season stats shows their season. "My picks"
   / "My stats" (or picking yourself in the menu) goes back. Your own picks stay loaded underneath, so unsaved edits
-  survive a look at someone else. **Another player's pick on a game stays hidden until that game kicks off**: the
-  server never sends it, admins included.
+  survive a look at someone else. **Another player's pick on a game stays hidden until that game kicks off, or
+  Sunday 1:00 PM ET** (when every pick is in, per the league), whichever comes first: from then on every pick of the
+  week shows (`deadlines.reveal_at`). Until then the server never sends it, admins included.
+- **Their pill strip** sits on their week card like yours does on the Picks tab (one pill per game with its points,
+  in sheet order; a lock while a pick is hidden; tap one to jump to the game). **Compare with my picks** (a dropdown
+  under it, closed by default, `src/compare.js`) adds a row of your saved picks under theirs. While it's open, each
+  game card also says "You: NYJ 12" (or "same pick"). Tiles: **Match**, the points you both put on the same side
+  (the smaller of the two on each game) out of the points on the games you can compare (the two totals averaged,
+  so two full weeks are "out of 100"); **Same side** (games you both picked, how many exactly, and the points on
+  games you split); **Head to head** (your score vs theirs, live while games are on). Only games whose
+  picks are revealed count, so nothing hidden leaks.
 - **Team names** (set in Email settings) show above the week card's title and under the name on Season stats.
-- Once a game kicks off, its card shows the pool's split (% and count per side, and whether you're with the
+- Once a game kicks off (or from Sunday 1:00 PM ET), its card shows the pool's split (% and count per side, and whether you're with the
   pool). **Details** lists every player's pick, points and result for that game.
 - **Public betting**: DraftKings' published betting splits (% of bets and % of money on each side of the spread),
   scraped from DK Network every 10 minutes before kickoff. The last split seen before kickoff is kept in the

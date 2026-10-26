@@ -128,6 +128,18 @@ def started(g: dict, results: dict, week_games: list[dict]) -> bool:
     return bool(known) and all(r["state"] == "post" for r in known)
 
 
+def revealed(g: dict, results: dict, week_games: list[dict], now: datetime | None = None) -> bool:
+    """Can other players see a pick on this game? Once it kicks off, or once Sunday's 1:00 PM ET games do."""
+    if started(g, results, week_games):
+        return True
+    at = deadlines.reveal_at((results.get(str(x.get("eventId") or "")) or {}).get("kickoff") for x in week_games)
+    return bool(at) and (now or _now()) >= at
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 def user_weeks(user_id: int) -> list[tuple[dict, list[dict], dict]]:
     """(week lines, merged saved games, picks row) for every week this user has picks on."""
     mine = db.user_picks(user_id)

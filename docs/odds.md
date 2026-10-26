@@ -159,7 +159,7 @@ win.
 
 ### Hidden picks stay hidden
 
-Another player's pick is hidden until its game kicks off. If Win % used those picks, you could save different picks
+Another player's pick is hidden until its game kicks off (or Sunday 1 PM ET). If Win % used those picks, you could save different picks
 of your own and watch your Win % move to work out a friend's side. So for games that haven't started, the only
 thing used is each player's **total** points on them, which the Max column already reveals. A test checks that
 flipping a hidden pick's side changes nobody's Win %.

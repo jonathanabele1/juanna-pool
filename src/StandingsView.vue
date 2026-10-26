@@ -1,11 +1,12 @@
 <script setup>
-// The whole pool: this week's leaderboard (live while games are on), then the season table. Tap a player to open
+// The whole pool: this week's leaderboard (live while games are on), then the season table through that week. Tap a player to open
 // their picks on the Picks tab (that week's, from the week table).
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { getWeekStandings, getSeasonStandings } from './api.js'
 import { pctText } from './odds.js'
+import WeekBar from './components/WeekBar.vue'
 
-const props = defineProps({ currentWeek: Number })
+const props = defineProps({ currentWeek: Number, summaries: Array })  // summaries: your score each week, on the strip
 const emit = defineEmits(['open'])
 
 const week = ref(props.currentWeek || 1)
@@ -22,10 +23,16 @@ async function loadWeek() {
   const d = await getWeekStandings(n)
   if (n === week.value) data.value = d
 }
+// the season up to the week picked above (an earlier week: the table as it stood then)
+async function loadSeason() {
+  const n = week.value
+  const d = await getSeasonStandings(n)
+  if (n === week.value) season.value = d
+}
 async function load(quiet = false) {
   clearTimeout(timer)
   try {
-    await Promise.all([loadWeek(), getSeasonStandings().then(d => { season.value = d })])
+    await Promise.all([loadWeek(), loadSeason()])
     error.value = ''
   } catch (e) {
     if (!quiet) error.value = e.message
@@ -36,7 +43,10 @@ async function load(quiet = false) {
 const onVisible = () => { if (document.visibilityState === 'visible') load(true) }
 onMounted(() => { load(); document.addEventListener('visibilitychange', onVisible) })
 onUnmounted(() => { clearTimeout(timer); document.removeEventListener('visibilitychange', onVisible) })
-watch(week, () => { data.value = null; loadWeek().catch(e => { error.value = e.message }) })
+watch(week, () => {
+  data.value = null; season.value = null
+  Promise.all([loadWeek(), loadSeason()]).catch(e => { error.value = e.message })
+})
 
 const seasonRows = computed(() => season.value?.rows || [])
 const live = computed(() => (data.value?.games.live || 0) > 0 || seasonRows.value.some(r => r.projected !== r.total))
@@ -56,8 +66,8 @@ const statusText = computed(() => {
 
 // Week columns: Score always; Live while games are on; Win % while the week's still being decided; Max and Live max
 // while games are left to play (Live max: games on now end as they stand, every game not started covers; it makes
-// way for Win % on phones); Acc once a pick is final (not on phones while games are on). Tap a header to sort by it, tap it again to flip. Default: Live while games are on,
-// otherwise Score.
+// way for Win % on phones); Acc once a pick is final. Tap a header to sort by it, tap it again to flip. Default: Live
+// while games are on, otherwise Score.
 const COLS = { score: 'Score', projected: 'Live', win: 'Win %', max: 'Max', liveMax: 'Live max', accuracy: 'Acc' }
 const anyPending = computed(() => rows.value.some(r => r.pending))
 const hasWin = computed(() => rows.value.some(r => r.win != null))
@@ -69,7 +79,7 @@ onMounted(() => phoneMq.addEventListener('change', onPhone))
 onUnmounted(() => phoneMq.removeEventListener('change', onPhone))
 const cols = computed(() => ['score', isLive.value && 'projected', hasWin.value && 'win', anyPending.value && 'max',
   isLive.value && anyPending.value && !(phone.value && hasWin.value) && 'liveMax',
-  hasAcc.value && !(phone.value && isLive.value) && 'accuracy'].filter(Boolean))
+  hasAcc.value && 'accuracy'].filter(Boolean))
 // the simulation says never/certain only when it's settled (1 or 0); anything else stays off 0% and 100%
 const cell = (r, c) => (r[c] == null ? '—' : c === 'accuracy' ? `${Math.round(r[c])}%` : c !== 'win' ? r[c] : r[c] === 1 ? '100%' : r[c] === 0 ? '0%' : pctText(r[c]))
 const ACC_TITLE = 'Accuracy: how close the final picks came, weighted by points. A cover or push is 100%, and a miss loses about 7% a point, down to 0% at 14 (the LOY counts as 20 points here). An app stat, not a league one.'
@@ -135,16 +145,15 @@ const behind = r => seasonRows.value[0].total - r.total
   <div class="standings">
     <p v-if="error" class="err">Couldn’t load the league: {{ error }}</p>
 
+    <!-- the same week strip as the Picks tab: tap a week (or swipe along) -->
+    <WeekBar v-model="week" class="lg-weeks" :current-week="currentWeek" :summaries="summaries || []" />
+
     <!-- ================= WEEK ================= -->
     <section class="lg">
       <header class="lg-head">
         <div class="lg-title">
           <h2>Week {{ week }}</h2>
           <span v-if="statusText" :class="['lg-status', { final: weekOver }]">{{ statusText }}</span>
-        </div>
-        <div class="stepper" aria-label="Choose week">
-          <button :disabled="week <= 1" aria-label="Previous week" @click="week--">‹</button>
-          <button :disabled="week >= 18" aria-label="Next week" @click="week++">›</button>
         </div>
       </header>
 
@@ -166,13 +175,13 @@ const behind = r => seasonRows.value[0].total - r.total
             <span class="tile-sub">{{ t.sub }}</span>
           </div>
         </dl>
-        <div class="table" role="table" aria-label="Week standings" :style="{ '--cols': cols.length }">
+        <div class="table week" role="table" aria-label="Week standings" :style="{ '--cols': cols.length }">
           <div class="tr th" role="row">
             <span role="columnheader">#</span>
             <span role="columnheader">Player</span>
             <button v-for="c in cols" :key="c" type="button" role="columnheader" :aria-sort="ariaSort(c)"
                     :class="['num', 'sort', { on: key === c }]" @click="sortBy(c)">
-              <span :title="c === 'win' ? WIN_TITLE : c === 'accuracy' ? ACC_TITLE : null">{{ COLS[c] }}</span><i class="arr" :class="{ up: key === c && sortDir > 0 }"></i>
+              <span :class="{ wrap: c === 'liveMax' }" :title="c === 'win' ? WIN_TITLE : c === 'accuracy' ? ACC_TITLE : null">{{ COLS[c] }}</span><i class="arr" :class="{ up: key === c && sortDir > 0 }"></i>
             </button>
           </div>
           <button
@@ -269,11 +278,7 @@ const behind = r => seasonRows.value[0].total - r.total
 .lg-title h2 { margin: 0; font-size: 1.25rem; font-weight: 800; letter-spacing: -.02em; color: var(--text); text-transform: none; }
 .lg-status { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 999px; background: var(--soft); color: var(--text-2); font-size: .7rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .lg-status.final { background: var(--ink); color: var(--on-ink); text-transform: uppercase; letter-spacing: .05em; }
-.stepper { display: inline-flex; flex: none; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-.stepper button { width: 38px; height: 36px; border: 0; background: var(--card); font-size: 1.3rem; cursor: pointer; color: var(--text); }
-.stepper button + button { border-left: 1px solid var(--line); }
-.stepper button:hover:not(:disabled) { background: var(--soft); }
-.stepper button:disabled { color: var(--faintest); cursor: default; }
+.lg-weeks { margin: 0 0 -6px; }
 
 .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 12px 14px; background: var(--card-2); border-top: 1px solid var(--line-soft); }
 .tile { min-width: 0; background: var(--card); border: 1px solid var(--line-soft); border-radius: 14px; padding: 9px 11px; display: flex; flex-direction: column; gap: 3px; }
@@ -282,23 +287,29 @@ const behind = r => seasonRows.value[0].total - r.total
 .tile dd { margin: 0; font-size: 1.35rem; font-weight: 800; line-height: 1.1; letter-spacing: -.02em; color: var(--text); font-variant-numeric: tabular-nums; }
 .tile-sub { font-size: .74rem; font-weight: 600; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* table: # | player | one column per number (Score, Live, Max, Live max) */
+/* table: # | player | one column per number (Score, Live, Win %, Max, Live max, Acc) */
 .table { border-top: 1px solid var(--line-soft); }
 .tr {
   display: grid; grid-template-columns: 40px minmax(0, 1fr) repeat(var(--cols, 1), 62px); align-items: center; gap: 0 4px;
   width: 100%; min-height: 56px; padding: 8px 14px 8px 12px; border: 0; border-top: 1px solid var(--line-soft); background: var(--card); font: inherit; color: inherit; text-align: left;
 }
 .season .tr { grid-template-columns: 40px minmax(0, 1fr) 76px 56px 56px 56px; }
+/* week: every number column as wide as its widest value (">99%" takes more than "28"), lined up across the rows */
+.week { display: grid; grid-template-columns: 40px minmax(0, 1fr) repeat(var(--cols, 1), minmax(52px, max-content)); column-gap: 10px; }
+.week > * { grid-column: 1 / -1; }
+.week > .tr { grid-template-columns: subgrid; column-gap: inherit; }
 .th { min-height: 0; border-top: 0; background: var(--card-2); padding-top: 8px; padding-bottom: 8px; font-size: .62rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); }
 .th .sort {
   align-self: stretch; border: 0; background: none; padding: 4px 0; margin: -4px 0; font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit;
   cursor: pointer; display: inline-flex; align-items: center; justify-content: flex-end; gap: 3px; line-height: 1.15; text-align: right;
 }
+.th .sort > span { white-space: nowrap; }
+.th .sort > span.wrap { white-space: normal; }
 .th .sort:hover { color: var(--text-2); }
 .th .sort.on { color: var(--blue); }
 .th .sort:focus-visible { outline: 2px solid #93c5fd; border-radius: 4px; }
-.arr { width: 0; height: 0; border-left: 3.5px solid transparent; border-right: 3.5px solid transparent; border-top: 4px solid currentColor; opacity: 0; flex: none; }
-.sort.on .arr { opacity: 1; }
+.arr { width: 0; height: 0; border-left: 3.5px solid transparent; border-right: 3.5px solid transparent; border-top: 4px solid currentColor; flex: none; }
+.sort:not(.on) .arr { display: none; }  /* only the sorted column's arrow takes room */
 .arr.up { transform: rotate(180deg); }
 button.tr { cursor: pointer; transition: background .12s; }
 button.tr:hover { background: var(--card-2); }
@@ -343,6 +354,7 @@ button.tr:focus-visible { outline: 2px solid #93c5fd; outline-offset: -2px; }
 
 @media (max-width: 520px) {
   .tr { grid-template-columns: 26px minmax(0, 1fr) repeat(var(--cols, 1), 46px); padding: 8px 10px; gap: 0 3px; min-height: 52px; }
+  .week { grid-template-columns: 26px minmax(0, 1fr) repeat(var(--cols, 1), minmax(28px, max-content)); column-gap: 7px; }
   .season .tr { grid-template-columns: 26px minmax(0, 1fr) 64px 48px 48px; }
   .season .avg { display: none; }
   .pct, .val.on.pct { font-size: .82rem; }

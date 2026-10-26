@@ -18,6 +18,8 @@ const props = defineProps({
   pool: Object,       // how the pool picked this game (revealed at kickoff)
   split: Object,      // DraftKings public betting
   otherPlayer: Boolean, // someone else's picks: the pool bar doesn't compare against them
+  yours: Object,      // someone else's picks: your own pick on this game, to show next to theirs
+  match: String,      // how theirs compares to yours (compare.js gameMatch)
   editable: Boolean,  // your saved week in view mode: show an Edit button on the card
   odds: Object,       // the favorite's cover odds, { fav, push }, while the game is on or before it starts
 })
@@ -91,6 +93,12 @@ const clockText = computed(() => {
 })
 const finalText = computed(() => (/OT/.test(ev.value?.detail || '') ? 'Final · OT' : 'Final'))
 const sideAbbr = key => (key === 'fav' ? r.value.favTeam : r.value.dogTeam)?.abbr
+const yoursText = computed(() => {
+  const y = props.yours
+  if (!y?.pick) return 'no pick'
+  if (props.match === 'same') return 'same pick'
+  return `${sideName(y.pick)} ${y.points}`
+})
 const pickedName = computed(() => (g.value.pick === 'fav' ? r.value.favTeam : r.value.dogTeam)?.name || g.value[g.value.pick])
 // tap a team to pick it, tap it again to clear the pick
 let lastChoice = null   // so a double-click (to see the team's stats) can undo its two taps
@@ -281,11 +289,12 @@ const moveChance = computed(() => {
 
     <footer v-else class="foot ro">
       <span class="picked">
-        <template v-if="g.hidden"><span aria-hidden="true">🔒</span> Pick hidden until kickoff</template>
+        <template v-if="g.hidden"><span aria-hidden="true">🔒</span> Pick hidden until kickoff or Sun 1 PM</template>
         <template v-else-if="!g.pick">No pick</template>
         <template v-else>Picked <b>{{ pickedName }}</b><template v-if="g.points"> · {{ g.points }} pts</template></template>
       </span>
       <span class="spacer"></span>
+      <span v-if="yours" :class="['yours', match]" :title="match === 'diff' ? 'You took the other side' : ''">You: <b>{{ yoursText }}</b></span>
       <button v-if="editable" type="button" class="edit-btn" :aria-label="`Edit picks (${g.fav} vs ${g.dog})`" @click="$emit('edit', $event.currentTarget.closest('article'))">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 2.5l2.5 2.5L6 12.5H3.5V10z"/></svg> {{ g.pick ? 'Edit' : 'Pick' }}
       </button>
@@ -374,6 +383,10 @@ const moveChance = computed(() => {
 .foot > .picked { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .foot > .spacer { flex: 1; }
 .foot.ro { margin-top: 8px; }
+.yours { flex: none; padding: 2px 9px; border-radius: 999px; background: var(--soft); color: var(--muted); font-size: .74rem; white-space: nowrap; }
+.yours b { color: var(--text-2); font-weight: 800; }
+.yours.diff { background: var(--violet-tint); color: var(--violet-ink); box-shadow: inset 0 0 0 1px var(--violet-line); }
+.yours.diff b { color: var(--violet-ink); }
 .picked { font-size: .85rem; color: var(--text-2); }
 .picked b { color: var(--text); }
 .link { background: none; border: 0; padding: 0; color: var(--blue); cursor: pointer; font: inherit; text-decoration: underline; }

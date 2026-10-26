@@ -43,6 +43,11 @@ class Scoring(unittest.TestCase):
         self.assertEqual(s["games"][1]["liveMargin"], 1)
         self.assertEqual(s["live"], {"wins": 1, "losses": 1, "pushes": 1, "points": 20 + 3})  # live push: half of 6
         self.assertEqual(s["ifEndedNow"], 10 + 20 + 3)
+        # live accuracy: the live picks rated as they stand (LV down 1 against the number: 100 - 100/14), with the final one
+        self.assertEqual([g.get("liveAccuracy") for g in s["games"]], [None, 100, 100 - 100 / 14, 100, None])
+        self.assertEqual(s["accuracy"], 100)
+        self.assertEqual(s["liveAccuracy"], round((10 * 100 + 20 * 100 + 5 * (100 - 100 / 14) + 6 * 100) / 41, 1))
+        self.assertIsNone(score_week(w, RES)["liveAccuracy"])   # nothing on: no live accuracy
         self.assertEqual(s["maxScore"], 10 + 20 + 5 + 6 + 2)
         self.assertEqual(s["liveMax"], 10 + 20 + 3 + 2)
 

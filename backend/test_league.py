@@ -5,7 +5,9 @@ from unittest import mock
 
 from fastapi.testclient import TestClient
 
-from backend import auth, db, espn, splits
+from datetime import datetime, timezone
+
+from backend import auth, db, espn, splits, weeks
 
 TEAM = lambda abbr, name: {"abbr": abbr, "location": abbr, "name": name, "logo": None, "color": None, "record": None}
 
@@ -27,6 +29,10 @@ LINES = [
 ]
 
 
+SUNDAY_1230 = datetime(2026, 10, 11, 16, 30, tzinfo=timezone.utc)
+SUNDAY_1PM = datetime(2026, 10, 11, 17, 0, tzinfo=timezone.utc)
+
+
 def fake_fetch(week=None):
     data = {"week": 6, "fetchedAt": 0, "events": EVENTS}
     db.save_results(6, EVENTS)
@@ -42,7 +48,9 @@ class League(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.patches = [mock.patch.object(db, "DB_PATH", Path(cls.tmp.name) / "pool.db"),
-                       mock.patch.object(espn, "_fetch_week", fake_fetch)]
+                       mock.patch.object(espn, "_fetch_week", fake_fetch),
+                       # Sunday 12:30 PM ET: game 3 (1:00 PM) hasn't kicked off and the picks aren't all shown yet
+                       mock.patch.object(weeks, "_now", lambda: SUNDAY_1230)]
         for p in cls.patches:
             p.start()
         db.init()
@@ -77,6 +85,15 @@ class League(unittest.TestCase):
         self.assertEqual(w["score"]["games"][2], {"outcome": "hidden"})
         self.assertEqual(w["hiddenCount"], 1)
         self.assertNotIn("odds", w["score"]["games"][2])
+
+    def test_every_pick_shows_from_sunday_1pm(self):
+        with mock.patch.object(weeks, "_now", lambda: SUNDAY_1PM):
+            c = self.client()
+            w = c.get(f"/api/players/{self.ann['id']}/weeks/6").json()
+            pool = c.get("/api/weeks/6/pool").json()
+        self.assertEqual([g.get("pick") for g in w["games"]], ["dog", "fav", "fav"])
+        self.assertEqual(w["hiddenCount"], 0)
+        self.assertTrue(all(g["revealed"] for g in pool["games"]))
 
     def test_my_own_picks_are_never_hidden(self):
         w = self.client().get(f"/api/players/{self.me['id']}/weeks/6").json()
@@ -131,6 +148,11 @@ class League(unittest.TestCase):
     def test_season_standings(self):
         rows = self.client().get("/api/standings/season").json()["rows"]
         self.assertEqual([(r["name"], r["rank"], r["total"]) for r in rows], [("Me", 1, 10), ("Bob", 2, 4), ("Ann", 3, 0)])
+
+    def test_season_standings_through_a_week(self):
+        c = self.client()
+        self.assertEqual(c.get("/api/standings/season?through=6").json()["latestWeek"], 6)
+        self.assertEqual(c.get("/api/standings/season?through=5").json(), {"rows": [], "latestWeek": None})
 
     def test_players_list(self):
         names = [p["displayName"] for p in self.client().get("/api/players").json()]

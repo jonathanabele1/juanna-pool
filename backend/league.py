@@ -1,11 +1,12 @@
 """The rest of the pool: other players' picks and stats, standings, the pool's split on each game, public betting.
 
-Another player's pick on a game stays hidden until that game kicks off (for everyone, admins included).
+Another player's pick on a game stays hidden until that game kicks off, or Sunday 1:00 PM ET when every pick is in
+(for everyone, admins included).
 """
 from fastapi import APIRouter, Depends, HTTPException
 
 from . import auth, db, scoring, splits, winchance
-from .weeks import in_league, season, started, user_week, week_entries, week_summaries
+from .weeks import in_league, revealed, season, user_week, week_entries, week_summaries
 
 router = APIRouter(prefix="/api")
 
@@ -47,7 +48,7 @@ def player_week(user_id: int, n: int, me: dict = Depends(auth.current_user)):
     lines = out["games"]
     hidden = 0
     for i, g in enumerate(lines):
-        if started(g, results, lines):
+        if revealed(g, results, lines):
             continue
         hidden += 1
         lines[i] = {**g, "pick": None, "points": None, "hidden": True}
@@ -95,12 +96,13 @@ def week_standings(n: int, me: dict = Depends(auth.current_user)):
 
 
 @router.get("/standings/season")
-def season_standings(me: dict = Depends(auth.current_user)):
+def season_standings(through: int | None = None, me: dict = Depends(auth.current_user)):
+    """The season table, counting weeks up to `through` (the week picked on the League tab) or all of them."""
     per_user: dict[int, list] = {}
     names: dict[int, str] = {}
     weekly_wins: dict[int, int] = {}
     for w in db.list_weeks():
-        if not w["games"]:
+        if not w["games"] or (through and w["week"] > through):
             continue
         _, results, entries = week_entries(w["week"], me["id"])
         for e in entries:
@@ -150,7 +152,7 @@ def pool(n: int, me: dict = Depends(auth.current_user)):
     out = []
     for i, g in enumerate(lines):
         key = db.game_key(g)
-        if not started(g, results, lines):
+        if not revealed(g, results, lines):
             out.append({"key": key, "revealed": False})
             continue
         picks = []

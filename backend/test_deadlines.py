@@ -1,6 +1,6 @@
 import unittest
 
-from backend.deadlines import compute
+from backend.deadlines import compute, reveal_at
 
 # week 5, 2026: Thursday night, a London game Sunday morning, Sunday afternoon, Monday night
 KICKOFFS = {
@@ -30,6 +30,20 @@ class Deadlines(unittest.TestCase):
 
     def test_unmatched_game_uses_sunday(self):
         self.assertEqual(compute(KICKOFFS)["fallback"], "2026-10-11T12:30:00Z")
+
+
+class Reveal(unittest.TestCase):
+    def test_sunday_1pm_et(self):
+        self.assertEqual(reveal_at(KICKOFFS.values()).isoformat(), "2026-10-11T17:00:00+00:00")
+
+    def test_london_game_doesnt_move_it(self):
+        self.assertEqual(reveal_at([KICKOFFS["thu"], KICKOFFS["lon"]]).isoformat(), "2026-10-11T17:00:00+00:00")
+
+    def test_after_daylight_saving_ends(self):
+        self.assertEqual(reveal_at(["2026-11-08T18:00Z"]).isoformat(), "2026-11-08T18:00:00+00:00")  # 1 PM EST
+
+    def test_no_sunday_game_known(self):
+        self.assertIsNone(reveal_at([KICKOFFS["thu"], None]))
 
 
 if __name__ == "__main__":

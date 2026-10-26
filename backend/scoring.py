@@ -134,6 +134,7 @@ def score_week(week: dict, results: dict) -> dict:
                 mine = r["liveMargin"] if g.get("pick") == "fav" else -r["liveMargin"]
                 entry["liveMargin"] = mine
                 entry["live"] = "push" if mine == 0 else "win" if mine > 0 else "loss"
+                entry["liveAccuracy"] = pick_accuracy(mine)
             odds = pick_odds(g, r)
             if odds:
                 entry["odds"] = odds
@@ -153,6 +154,9 @@ def score_week(week: dict, results: dict) -> dict:
         "earned": earned,
         "wagered": sum(g["points"] for g in picked),
         "accuracy": accuracy(picked),  # decided picks only; None until one is final
+        # live: the games on now count as they stand too (None while nothing's on)
+        "liveAccuracy": accuracy([{**g, "accuracy": g.get("liveAccuracy")} if g.get("live") else g for g in picked])
+        if any(g.get("live") for g in picked) else None,
         "wins": count("win"), "losses": count("loss"), "pushes": count("push"),
         "pending": count("pending"),
         "penalties": pen,

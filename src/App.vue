@@ -145,7 +145,7 @@ watch(asAdmin, on => { if (!on && user.value && tab.value === 'admin') tab.value
             <PicksView :key="`${week}-${asAdmin}`" :week="week" :current-week="currentWeek" :is-admin="asAdmin" @saved="refreshSummaries" @scored="refreshSummaries" />
           </div>
         </div>
-        <StandingsView v-if="tab === 'league'" :current-week="currentWeek" @open="openPlayer" />
+        <StandingsView v-if="tab === 'league'" :current-week="currentWeek" :summaries="summaries" @open="openPlayer" />
         <StatsView v-if="tab === 'stats'" :user-id="shown?.id" :mine="!other" :player="shown" :refresh="statsRefresh" @mine="viewing = null" />
         <AdminView v-if="tab === 'admin' && asAdmin" :me="user" :current-week="currentWeek || week" @announcement="announcement = $event" />
       </template>

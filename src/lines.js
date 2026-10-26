@@ -64,3 +64,24 @@ export function coverNow(g, events) {
   const margin = g.pick === 'dog' ? -m : m
   return { state: ev.state, margin, status: margin > 0 ? 'win' : margin < 0 ? 'loss' : 'push' }
 }
+
+// The accuracy dialog's rows: each final pick with how it landed, and each pick on now as it stands. games are the saved picks and results the server's
+// scoring of them (same order); a result's margin is the favorite's side, so it's flipped for an underdog pick.
+const half = n => String(n).replace('.5', '½')
+export function accuracyRows(games, results, events) {
+  return (results || []).flatMap((res, i) => {
+    const g = games?.[i]
+    const live = res?.accuracy == null && res?.liveAccuracy != null   // on now: rated as it stands
+    if (!g?.pick || (res?.accuracy == null && !live)) return []
+    const r = resolveGame(g, events), t = g.pick === 'fav' ? r.favTeam : r.dogTeam
+    const mine = live ? res.liveMargin : g.pick === 'fav' ? res.margin : -res.margin   // liveMargin is already your side's
+    const pts = Number(g.points) || 0
+    return [{
+      key: i, abbr: t?.abbr || (g[`${g.pick}Abbr`] || g[g.pick] || '').toUpperCase(), logo: t?.logo, pts, live,
+      weight: Math.min(pts, 20),   // the lock counts as 20, as on the server
+      how: live ? (mine > 0 ? `Covering by ${half(mine)}` : mine < 0 ? `Down ${half(-mine)}` : 'On the number')
+        : mine > 0 ? `Covered by ${half(mine)}` : mine < 0 ? `Missed by ${half(-mine)}` : 'Push',
+      acc: live ? res.liveAccuracy : res.accuracy,
+    }]
+  })
+}

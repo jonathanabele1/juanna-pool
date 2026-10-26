@@ -1,12 +1,12 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { parseSpreads, parseWeek } from './parse.js'
-import { currentLine, resolveGame, coverNow } from './lines.js'
+import { currentLine, resolveGame, coverNow, accuracyRows } from './lines.js'
 import { getLines, getWeek, saveWeek, deleteWeek, uploadImage, getTeamCovers, getPool, getSplits } from './api.js'
 import { MAIL_APPS, openMail, platform } from './mail.js'
 import { mailPrefs, loadMailPrefs } from './mailPrefs.js'
 import { gameKey, poolByKey } from './pool.js'
-import { sideOdds, pctText, pushText } from './odds.js'
+import { gamePop } from './gamepop.js'
 import GameRow from './components/GameRow.vue'
 import GameTile from './components/GameTile.vue'
 import UploadDialog from './components/UploadDialog.vue'
@@ -427,20 +427,7 @@ const OUTCOME_TEXT = { win: 'covered', loss: 'missed', push: 'push', pending: 'n
 const LIVE_TEXT = { win: 'live, covering', loss: 'live, not covering', push: 'live, on the number' }
 // ---- accuracy: the tile opens a breakdown of every final pick ----
 const accOpen = ref(false)
-const half = n => String(n).replace('.5', '½')
-const accRows = computed(() => (scored.value?.games || []).flatMap((res, i) => {
-  const g = serverCopy.value?.games?.[i]
-  if (!g?.pick || res?.accuracy == null) return []
-  const r = resolveGame(g, events.value), t = g.pick === 'fav' ? r.favTeam : r.dogTeam
-  const mine = g.pick === 'fav' ? res.margin : -res.margin
-  const pts = Number(g.points) || 0
-  return [{
-    key: i, abbr: t?.abbr || (g[`${g.pick}Abbr`] || g[g.pick] || '').toUpperCase(), logo: t?.logo, pts,
-    weight: Math.min(pts, 20),   // the lock counts as 20, as on the server
-    how: mine > 0 ? `Covered by ${half(mine)}` : mine < 0 ? `Missed by ${half(-mine)}` : 'Push',
-    acc: res.accuracy,
-  }]
-}))
+const accRows = computed(() => accuracyRows(serverCopy.value?.games, scored.value?.games, events.value))
 
 const tally = computed(() => {
   const t = { win: 0, loss: 0, push: 0, pending: 0, liveWin: 0, liveLoss: 0 }
@@ -477,28 +464,8 @@ onUnmounted(() => document.removeEventListener('pointerdown', onDocTap))
 const popInfo = computed(() => {
   const x = pop.value && rowInfo.value[pop.value.i]
   if (!x) return null
-  const r = resolveGame(x.g, events.value), ev = r.event, res = resultFor(x.i)
-  const scoreOf = key => {
-    if (!ev || ev.state === 'pre') return null
-    const team = key === 'fav' ? r.favTeam : r.dogTeam
-    return ev.scores?.[team === ev.home ? 'home' : 'away'] ?? res?.[`${key}Score`] ?? null
-  }
-  const side = key => {
-    const t = key === 'fav' ? r.favTeam : r.dogTeam
-    return { abbr: t?.abbr || (x.g[key] || '').toUpperCase(), logo: t?.logo, score: scoreOf(key), mine: x.g.pick === key }
-  }
-  const teams = r.favHome ? [side('dog'), side('fav')] : [side('fav'), side('dog')]   // away first
-  const l = ev?.live
-  const when = !ev ? `${x.g.day || ''} ${x.g.time || ''}`.trim()
-    : ev.state === 'post' ? (/OT/.test(ev.detail || '') ? 'Final · OT' : 'Final')
-    : ev.state === 'in' ? (l?.halftime ? 'Halftime' : [l?.quarter, l?.clock].filter(Boolean).join(' · ') || 'Live')
-    : new Date(ev.kickoff).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })
-  const line = x.g.hasLine === false ? '' : !x.g.spread ? ' PK' : x.g.pick === 'fav' ? ` −${x.g.spread}` : ` +${x.g.spread}`
-  const pick = x.skip ? 'No pick' : `${side(x.g.pick).abbr}${line} · ${x.pts} pts`
-  // the chance to cover, once there's something to say: the game's on, or the line has moved off the sheet's
-  const o = x.outcome === 'pending' && (ev?.state === 'in' || nowLines.value[x.i]?.changed) ? sideOdds(oddsFor(x.g), x.g.pick) : null
-  const chance = o && [`${pctText(o.cover)} to cover`, pushText(o)].filter(Boolean).join(' · ')
-  return { teams, when, pick, chance, cls: segClass(x), label: segText(x) }
+  const info = gamePop(x.g, resultFor(x.i), events.value, { odds: oddsFor(x.g), lineMoved: !!nowLines.value[x.i]?.changed })
+  return { ...info, cls: segClass(x), label: segText(x) }
 })
 async function goToGame(i) {
   pop.value = null
@@ -575,6 +542,7 @@ const adjText = computed(() => [
           <p v-if="mailPrefs.teamName" class="wh-who">{{ mailPrefs.teamName }}</p>
           <div class="wh-title">
             <h2>Week {{ week }}</h2>
+            <span v-if="liveCount" class="wh-live" title="Games on now. The red numbers are if they ended as they stand"><i class="ldot"></i>Live</span>
           </div>
           <p v-if="status || !games.length || scheduled || !hasSaved" class="wh-sub">
             <template v-if="status">{{ status }}</template>
@@ -599,26 +567,27 @@ const adjText = computed(() => [
           <div :class="['stat', 'score', card.score > 0 ? 'pos' : card.score < 0 ? 'neg' : '']">
             <dt>Score</dt><dd>{{ card.score }}</dd>
             <span v-if="liveGames" class="stat-live" title="Your score if every game on now ended as it stands">
-              <i class="ldot"></i>Live {{ scored.ifEndedNow }}
+              {{ scored.ifEndedNow }}
             </span>
           </div>
           <div class="stat">
             <dt>Record</dt><dd>{{ card.wins }}–{{ card.losses }}<template v-if="card.pushes">–{{ card.pushes }}</template></dd>
             <span v-if="liveGames" class="stat-live" title="Your record if every game on now ended as it stands">
-              <i class="ldot"></i>Live {{ card.wins + liveRec.wins }}–{{ card.losses + liveRec.losses }}<template v-if="card.pushes + liveRec.pushes">–{{ card.pushes + liveRec.pushes }}</template>
+              {{ card.wins + liveRec.wins }}–{{ card.losses + liveRec.losses }}<template v-if="card.pushes + liveRec.pushes">–{{ card.pushes + liveRec.pushes }}</template>
             </span>
           </div>
           <div v-if="hasResults && card.pending" class="stat">
             <dt>Max possible</dt><dd>{{ card.maxScore }}</dd>
             <span v-if="liveGames && scored.liveMax != null" class="stat-live" title="Games on now end as they stand, every game not started yet covers">
-              <i class="ldot"></i>Live {{ scored.liveMax }}
+              {{ scored.liveMax }}
             </span>
           </div>
-          <div v-if="scored?.accuracy != null" class="stat tap" role="button" tabindex="0" aria-haspopup="dialog"
-               :aria-label="`Accuracy ${Math.round(scored.accuracy)}%. Show how it's worked out`"
+          <div v-if="scored?.accuracy != null || scored?.liveAccuracy != null" class="stat tap" role="button" tabindex="0" aria-haspopup="dialog"
+               :aria-label="`Accuracy ${scored.accuracy == null ? 'not rated yet' : Math.round(scored.accuracy) + '%'}. Show how it's worked out`"
                @click="accOpen = true" @keydown.enter.prevent="accOpen = true" @keydown.space.prevent="accOpen = true">
-            <dt>Accuracy</dt><dd>{{ Math.round(scored.accuracy) }}%</dd>
-            <span class="stat-more">Details<svg viewBox="0 0 8 12" aria-hidden="true"><path d="M2 2l4 4-4 4" /></svg></span>
+            <dt>Accuracy<svg class="stat-go" viewBox="0 0 8 12" aria-hidden="true"><path d="M2 2l4 4-4 4" /></svg></dt>
+            <dd>{{ scored.accuracy == null ? '—' : `${Math.round(scored.accuracy)}%` }}</dd>
+            <span v-if="scored.liveAccuracy != null" class="stat-live" title="If the games on now ended as they stand">{{ Math.round(scored.liveAccuracy) }}%</span>
           </div>
           <div v-if="!hasResults" :class="['stat', 'used', state]">
             <dt>Points used</dt><dd>{{ total }}<small> / {{ TARGET }}</small></dd>
@@ -819,7 +788,7 @@ const adjText = computed(() => [
       </footer>
     </template>
 
-    <AccuracyDialog v-if="accOpen && scored?.accuracy != null" :week="week" :pct="scored.accuracy" :rows="accRows"
+    <AccuracyDialog v-if="accOpen && (scored?.accuracy ?? scored?.liveAccuracy) != null" :week="week" :pct="scored.accuracy" :live-pct="scored.liveAccuracy" :rows="accRows"
                     :pending="card.pending" @close="accOpen = false" />
     <SendPicksDialog v-if="confirmSend" :week="week" :game-count="games.length" :saved="savedPicks" :out="outGames"
                      :to="leagueEmail" :app-label="mailApp?.label || ''" :body="output"

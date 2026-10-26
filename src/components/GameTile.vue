@@ -141,7 +141,7 @@ const poolTop = computed(() => {
 
     <footer class="t-foot">
       <span v-if="statusText" :class="['t-status', outcome || liveStatus]">{{ statusText }}</span>
-      <span v-else-if="g.hidden" class="t-hint">🔒 Hidden until kickoff</span>
+      <span v-else-if="g.hidden" class="t-hint">🔒 Hidden until kickoff or Sun 1 PM</span>
       <span v-else-if="!g.pick" class="t-hint">{{ readonly ? 'No pick' : 'Tap a team' }}</span>
       <span class="spacer"></span>
       <template v-if="g.pick">
